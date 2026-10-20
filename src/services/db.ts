@@ -4,16 +4,24 @@
  */
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import type {
+  AuditEntry,
   CashTransaction,
   Customer,
   CustomerPayment,
   Expense,
   Invoice,
+  InvoiceImage,
+  ManualSale,
+  PriceChange,
   Product,
+  ProductCategory,
   Purchase,
+  ScannedInvoice,
   Settings,
+  StockWriteOff,
   Supplier,
   SupplierPayment,
+  SupplierPrice,
 } from '../types';
 
 interface StoreDB extends DBSchema {
@@ -24,21 +32,55 @@ interface StoreDB extends DBSchema {
   purchases: { key: string; value: Purchase; indexes: { 'by-date': number; 'by-supplier': string; 'by-status': string; 'by-token': string } };
   expenses: { key: string; value: Expense; indexes: { 'by-date': number } };
   cash: { key: string; value: CashTransaction; indexes: { 'by-date': number; 'by-ref': string } };
-  customerPayments: { key: string; value: CustomerPayment; indexes: { 'by-date': number; 'by-customer': string } };
-  supplierPayments: { key: string; value: SupplierPayment; indexes: { 'by-date': number; 'by-supplier': string } };
+  customerPayments: {
+    key: string;
+    value: CustomerPayment;
+    indexes: { 'by-date': number; 'by-customer': string; 'by-token': string };
+  };
+  supplierPayments: {
+    key: string;
+    value: SupplierPayment;
+    indexes: { 'by-date': number; 'by-supplier': string; 'by-token': string };
+  };
   settings: { key: string; value: Settings };
   meta: { key: string; value: { key: string; value: unknown } };
+  // ——— الإصدار 2: سجل المبيعات، التصنيفات، الأسعار، الفواتير الممسوحة ———
+  manualSales: {
+    key: string;
+    value: ManualSale;
+    indexes: { 'by-date': number; 'by-token': string; 'by-product': string; 'by-source': string };
+  };
+  categories: { key: string; value: ProductCategory; indexes: { 'by-normalized': string } };
+  priceHistory: {
+    key: string;
+    value: PriceChange;
+    indexes: { 'by-product': string; 'by-date': number };
+  };
+  scannedInvoices: {
+    key: string;
+    value: ScannedInvoice;
+    indexes: { 'by-scan-date': number; 'by-invoice-date': number; 'by-fingerprint': string; 'by-supplier': string };
+  };
+  invoiceImages: { key: string; value: InvoiceImage };
+  audit: { key: string; value: AuditEntry; indexes: { 'by-at': number } };
+  // ——— الإصدار 3: الإتلاف وتاريخ أسعار الموردين ———
+  stockWriteOffs: { key: string; value: StockWriteOff; indexes: { 'by-date': number; 'by-product': string } };
+  supplierPrices: {
+    key: string;
+    value: SupplierPrice;
+    indexes: { 'by-supplier': string; 'by-product': string; 'by-date': number };
+  };
 }
 
 export const DB_NAME = 'masroofi-store-manager';
-export const DB_VERSION = 1;
+export const DB_VERSION = 3;
 
 let dbPromise: Promise<IDBPDatabase<StoreDB>> | null = null;
 
 export function getDB(): Promise<IDBPDatabase<StoreDB>> {
   if (!dbPromise) {
     dbPromise = openDB<StoreDB>(DB_NAME, DB_VERSION, {
-      upgrade(db) {
+      upgrade(db, oldVersion, _newVersion, tx) {
         // المنتجات
         if (!db.objectStoreNames.contains('products')) {
           const s = db.createObjectStore('products', { keyPath: 'id' });
@@ -102,6 +144,64 @@ export function getDB(): Promise<IDBPDatabase<StoreDB>> {
         // بيانات وصفية (عدادات الأرقام التسلسلية…)
         if (!db.objectStoreNames.contains('meta')) {
           db.createObjectStore('meta', { keyPath: 'key' });
+        }
+
+        // ————— الإصدار 2 — إضافة فقط، دون المساس بالبيانات الموجودة —————
+        if (!db.objectStoreNames.contains('manualSales')) {
+          const s = db.createObjectStore('manualSales', { keyPath: 'id' });
+          s.createIndex('by-date', 'date');
+          s.createIndex('by-token', 'clientToken', { unique: true });
+          s.createIndex('by-product', 'productId');
+          s.createIndex('by-source', 'source');
+        }
+        if (!db.objectStoreNames.contains('categories')) {
+          const s = db.createObjectStore('categories', { keyPath: 'id' });
+          s.createIndex('by-normalized', 'normalized', { unique: true });
+        }
+        if (!db.objectStoreNames.contains('priceHistory')) {
+          const s = db.createObjectStore('priceHistory', { keyPath: 'id' });
+          s.createIndex('by-product', 'productId');
+          s.createIndex('by-date', 'date');
+        }
+        if (!db.objectStoreNames.contains('scannedInvoices')) {
+          const s = db.createObjectStore('scannedInvoices', { keyPath: 'id' });
+          s.createIndex('by-scan-date', 'scanDate');
+          s.createIndex('by-invoice-date', 'invoiceDate');
+          s.createIndex('by-fingerprint', 'fingerprint');
+          s.createIndex('by-supplier', 'supplierName');
+        }
+        if (!db.objectStoreNames.contains('invoiceImages')) {
+          db.createObjectStore('invoiceImages', { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains('audit')) {
+          const s = db.createObjectStore('audit', { keyPath: 'id' });
+          s.createIndex('by-at', 'at');
+        }
+
+        // ————— الإصدار 3 — إضافة فقط: الإتلاف وأسعار الموردين وفهارس منع التكرار —————
+        if (!db.objectStoreNames.contains('stockWriteOffs')) {
+          const s = db.createObjectStore('stockWriteOffs', { keyPath: 'id' });
+          s.createIndex('by-date', 'date');
+          s.createIndex('by-product', 'productId');
+        }
+        if (!db.objectStoreNames.contains('supplierPrices')) {
+          const s = db.createObjectStore('supplierPrices', { keyPath: 'id' });
+          s.createIndex('by-supplier', 'supplierId');
+          s.createIndex('by-product', 'productId');
+          s.createIndex('by-date', 'date');
+        }
+        // فهارس منع تكرار الدفعات — تُضاف للسجلات القديمة دون حذفها.
+        // السجلات القديمة بلا clientToken لا تدخل الفهرس، فلا تعارض.
+        if (oldVersion < 3) {
+          for (const [storeName, indexName] of [
+            ['customerPayments', 'by-token'],
+            ['supplierPayments', 'by-token'],
+          ] as const) {
+            const store = tx.objectStore(storeName);
+            if (!store.indexNames.contains(indexName)) {
+              store.createIndex(indexName, 'clientToken');
+            }
+          }
         }
       },
     });

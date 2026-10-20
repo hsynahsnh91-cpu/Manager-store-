@@ -7,6 +7,7 @@ import {
   createPurchase,
   getNextPurchaseNumber,
   listPurchases,
+  preparePurchaseLine,
   receivePurchase,
 } from '../../services/purchases';
 import { listProducts } from '../../services/products';
@@ -19,8 +20,9 @@ import { Input, Select, Textarea } from '../../components/Form';
 import { Modal } from '../../components/Modal';
 import { Badge, EmptyState, SkeletonRows } from '../../components/UI';
 import { formatDate } from '../../utils/dates';
-import { formatMoney, round2 } from '../../utils/money';
+import { formatMoney, formatUnitPrice, round2 } from '../../utils/money';
 import { uid } from '../../utils/id';
+import { UNITS, unitLabel } from '../../utils/units';
 
 interface DraftLine {
   productId: string;
@@ -28,6 +30,8 @@ interface DraftLine {
   code: string;
   quantity: string;
   unitCost: string;
+  /** وحدة الإدخال في هذه الفاتورة (كرتونة/كيلو…) */
+  enteredUnit: string;
 }
 
 export function PurchasesPage() {
@@ -46,6 +50,7 @@ export function PurchasesPage() {
   const [supplierId, setSupplierId] = useState('');
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [discount, setDiscount] = useState('0');
+  const [extraCosts, setExtraCosts] = useState('0');
   const [paidStr, setPaidStr] = useState('0');
   const [method, setMethod] = useState<'cash' | 'bank' | 'credit'>('cash');
   const [notes, setNotes] = useState('');
@@ -67,17 +72,28 @@ export function PurchasesPage() {
     });
   }, [purchases, search, statusFilter]);
 
-  const draftLines = lines
-    .map((l) => ({
-      productId: l.productId,
-      name: l.name,
-      code: l.code,
-      quantity: Number(l.quantity) || 0,
-      unitCost: Number(l.unitCost) || 0,
-    }))
-    .filter((l) => l.productId && l.quantity > 0);
+  /**
+   * تحويل كل سطر من وحدة الشراء إلى الوحدة الأساسية.
+   * إذا لم يكن التحويل محددًا (كرتونة بلا عدد قطع) نعرض تنبيهًا ونمنع الحفظ
+   * بدل اختراع رقم افتراضي.
+   */
+  const prepared = lines.map((l) => {
+    const product = (products ?? []).find((x) => x.id === l.productId);
+    const qty = Number(l.quantity) || 0;
+    const cost = Number(l.unitCost) || 0;
+    if (!product || qty <= 0) {
+      return { line: l, item: null, error: null, factor: null, baseQuantity: 0, product };
+    }
+    const result = preparePurchaseLine(product, qty, cost, l.enteredUnit);
+    return { line: l, ...result, product };
+  });
 
-  const totals = computePurchaseTotals(draftLines, Number(discount) || 0);
+  const draftLines = prepared
+    .map((r) => r.item)
+    .filter((i): i is NonNullable<typeof i> => Boolean(i));
+
+  const conversionIssues = prepared.filter((r) => r.error);
+  const totals = computePurchaseTotals(draftLines, Number(discount) || 0, Number(extraCosts) || 0);
   const paid = method === 'credit' ? 0 : Number(paidStr) || 0;
   const remaining = Math.max(0, round2(totals.total - Math.min(paid, totals.total)));
 
@@ -85,6 +101,7 @@ export function PurchasesPage() {
     setSupplierId('');
     setLines([]);
     setDiscount('0');
+    setExtraCosts('0');
     setPaidStr('0');
     setMethod('cash');
     setNotes('');
@@ -110,6 +127,7 @@ export function PurchasesPage() {
           code: p.code,
           quantity: '1',
           unitCost: String(p.purchasePrice),
+          enteredUnit: p.purchaseUnit ?? p.saleUnit ?? 'piece',
         },
       ];
     });
@@ -121,15 +139,20 @@ export function PurchasesPage() {
       toast(t('required'), 'error');
       return;
     }
+    if (conversionIssues.length > 0) {
+      toast(t('conversionRequiredHint'), 'error');
+      return;
+    }
     setSaving(true);
     try {
       const number = await getNextPurchaseNumber(settings.purchasePrefix);
       const supplier = (suppliers ?? []).find((s) => s.id === supplierId);
       const purchase = await createPurchase({
-        items: draftLines.map((l) => ({ productId: l.productId, name: l.name, code: l.code, quantity: l.quantity, unitCost: l.unitCost })),
+        items: draftLines,
         supplierId: supplierId || null,
         supplierName: supplier?.name ?? '',
         discount: Number(discount) || 0,
+        extraCosts: Number(extraCosts) || 0,
         paid: method === 'credit' ? 0 : Number(paidStr) || 0,
         paymentMethod: method,
         status: 'ordered',
@@ -350,30 +373,57 @@ export function PurchasesPage() {
                   <tr>
                     <th>{t('productName')}</th>
                     <th className="w-24">{t('quantity')}</th>
+                    <th className="w-28">{t('receivedUnit')}</th>
                     <th className="w-32">{t('unitCost')}</th>
                     <th className="th-numeric w-28">{t('total')}</th>
                     <th className="w-10" />
                   </tr>
                 </thead>
                 <tbody>
-                  {lines.map((l) => (
+                  {lines.map((l) => {
+                    const row = prepared.find((r) => r.line.productId === l.productId);
+                    return (
                     <tr key={l.productId}>
                       <td className="text-xs font-semibold">
                         {l.name}
                         <span className="ms-1 text-[10px] text-slate-400" dir="ltr">
                           {l.code}
                         </span>
+                        {row?.item && (
+                          <p className="mt-0.5 text-[10px] font-normal text-emerald-600 dark:text-emerald-400">
+                            {t('baseQuantity')}: {row.item.quantity} {unitLabel(row.product?.saleUnit ?? row.product?.unit ?? 'piece')} · {formatUnitPrice(row.item.unitCost, settings.currency)}
+                          </p>
+                        )}
+                        {row?.error && (
+                          <p className="mt-0.5 text-[10px] font-normal text-rose-600">
+                            {t('conversionRequired')} — {t('conversionRequiredHint')}
+                          </p>
+                        )}
                       </td>
                       <td>
                         <input
                           type="number"
-                          min="1"
+                          min="0.001"
+                          step="0.001"
                           value={l.quantity}
                           onChange={(e) =>
                             setLines((prev) => prev.map((x) => (x.productId === l.productId ? { ...x, quantity: e.target.value } : x)))
                           }
                           className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-mono dark:border-slate-600 dark:bg-slate-800"
                         />
+                      </td>
+                      <td>
+                        <select
+                          value={l.enteredUnit}
+                          onChange={(e) =>
+                            setLines((prev) => prev.map((x) => (x.productId === l.productId ? { ...x, enteredUnit: e.target.value } : x)))
+                          }
+                          className="w-full rounded-md border border-slate-300 bg-white px-1 py-1 text-[11px] dark:border-slate-600 dark:bg-slate-800"
+                        >
+                          {UNITS.map((u) => (
+                            <option key={u.code} value={u.code}>{unitLabel(u.code)}</option>
+                          ))}
+                        </select>
                       </td>
                       <td>
                         <input
@@ -399,14 +449,24 @@ export function PurchasesPage() {
                         </button>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Input label={t('discount')} type="number" min="0" step="0.01" value={discount} onChange={(e) => setDiscount(e.target.value)} />
+            <Input
+              label={t('extraCosts')}
+              type="number"
+              min="0"
+              step="0.01"
+              value={extraCosts}
+              onChange={(e) => setExtraCosts(e.target.value)}
+              hint={t('extraCostsHint')}
+            />
             <Input
               label={t('amountPaid')}
               type="number"
@@ -422,6 +482,7 @@ export function PurchasesPage() {
           <div className="space-y-1 rounded-lg bg-slate-50 p-3 text-xs dark:bg-slate-800/70">
             <SummaryRow label={t('subtotal')} value={formatMoney(totals.subtotal, settings.currency)} />
             <SummaryRow label={t('discount')} value={`− ${formatMoney(totals.discount, settings.currency)}`} />
+            <SummaryRow label={t('extraCosts')} value={`+ ${formatMoney(totals.extraCosts, settings.currency)}`} />
             <SummaryRow label={t('total')} value={formatMoney(totals.total, settings.currency)} strong />
             <SummaryRow label={t('paid')} value={formatMoney(Math.min(paid, totals.total), settings.currency)} />
             <SummaryRow label={t('remaining')} value={formatMoney(remaining, settings.currency)} strong />
@@ -484,9 +545,17 @@ export function PurchasesPage() {
               <tbody>
                 {selected.items.map((it: PurchaseItem) => (
                   <tr key={it.productId}>
-                    <td className="text-xs font-semibold">{it.name}</td>
+                    <td className="text-xs font-semibold">
+                      {it.name}
+                      {it.enteredQuantity && it.enteredUnit && (
+                        <p className="mt-0.5 text-[10px] font-normal text-slate-400">
+                          {it.enteredQuantity} {unitLabel(it.enteredUnit)}
+                          {it.enteredUnitCost != null ? ` × ${formatUnitPrice(it.enteredUnitCost, settings.currency)}` : ''}
+                        </p>
+                      )}
+                    </td>
                     <td className="td-numeric">{it.quantity}</td>
-                    <td className="td-numeric">{formatMoney(it.unitCost)}</td>
+                    <td className="td-numeric">{formatUnitPrice(it.unitCost, settings.currency)}</td>
                     <td className="td-numeric font-bold">{formatMoney(it.lineTotal)}</td>
                   </tr>
                 ))}
@@ -495,6 +564,7 @@ export function PurchasesPage() {
             <div className="ms-auto max-w-xs space-y-1 text-xs">
               <SummaryRow label={t('subtotal')} value={formatMoney(selected.subtotal, settings.currency)} />
               <SummaryRow label={t('discount')} value={`− ${formatMoney(selected.discount, settings.currency)}`} />
+              <SummaryRow label={t('extraCosts')} value={`+ ${formatMoney(selected.extraCosts ?? 0, settings.currency)}`} />
               <SummaryRow label={t('total')} value={formatMoney(selected.total, settings.currency)} strong />
               <SummaryRow label={t('paid')} value={formatMoney(selected.paid, settings.currency)} />
               <SummaryRow label={t('remaining')} value={formatMoney(selected.remaining, settings.currency)} strong />

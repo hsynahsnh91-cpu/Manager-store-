@@ -7,9 +7,20 @@
  * - صافي الربح = الربح الإجمالي − المصروفات التشغيلية.
  * - تحصيل الديون والتحويلات الداخلية خارج الدخل والمصروفات.
  */
-import type { CashTransaction, CustomerPayment, Expense, Invoice, Purchase, Product, SupplierPayment } from '../types';
+import type {
+  CashTransaction,
+  CustomerPayment,
+  Expense,
+  Invoice,
+  ManualSale,
+  Purchase,
+  Product,
+  StockWriteOff,
+  Supplier,
+  SupplierPayment,
+} from '../types';
 import { getAll } from './db';
-import { addMoney, mulMoney, subMoney, sumMoney, round2 } from '../utils/money';
+import { addMoney, mulCost, subMoney, sumMoney, round2 } from '../utils/money';
 import { endOfDay, startOfDay } from '../utils/dates';
 
 export interface DateRange {
@@ -38,6 +49,10 @@ export interface PnlReport {
   outstanding: number; // المتوقع تحصيله
   cancelledCount: number;
   cancelledTotal: number;
+  manualCount: number; // عدد السجلات اليدوية المحتسبة (لا تُنشئ فواتير فلا ازدواج)
+  manualSales: number; // مبيعات يدوية ضمن الفترة
+  /** قيمة الإتلاف/التلف بالتكلفة — خسارة غير نقدية منفصلة */
+  writeOffs: number;
 }
 
 export interface DashboardData {
@@ -49,6 +64,8 @@ export interface DashboardData {
   inventoryRetailValue: number;
   customerDebts: number;
   supplierDues: number;
+  writeOffs: number;
+  expiryAlerts: { product: Product; status: 'expired' | 'expiring'; daysLeft: number }[];
   lowStock: Product[];
   recentInvoices: Invoice[];
   topProducts: { productId: string; name: string; quantity: number; revenue: number }[];
@@ -56,7 +73,7 @@ export interface DashboardData {
 }
 
 async function loadAll() {
-  const [invoices, purchases, expenses, payments, supplierPayments, products, cash] =
+  const [invoices, purchases, expenses, payments, supplierPayments, products, cash, manualSales, writeOffs, customers, suppliers] =
     await Promise.all([
       getAll<Invoice>('invoices'),
       getAll<Purchase>('purchases'),
@@ -65,25 +82,51 @@ async function loadAll() {
       getAll<SupplierPayment>('supplierPayments'),
       getAll<Product>('products'),
       getAll<CashTransaction>('cash'),
+      getAll<ManualSale>('manualSales'),
+      getAll<StockWriteOff>('stockWriteOffs'),
+      getAll<{ openingBalance?: number }>('customers'),
+      getAll<Supplier>('suppliers'),
     ]);
-  return { invoices, purchases, expenses, payments, supplierPayments, products, cash };
+  return {
+    invoices,
+    purchases,
+    expenses,
+    payments,
+    supplierPayments,
+    products,
+    cash,
+    manualSales,
+    writeOffs,
+    customers,
+    suppliers,
+  };
+}
+
+/** تكلفة البضاعة لسجل يدوي (صفر إذا كانت التكلفة غير معروفة) */
+export function manualSaleCogs(sale: ManualSale): number {
+  return sale.unitCost === null ? 0 : mulCost(sale.quantity, sale.unitCost);
 }
 
 export function computePnl(
   invoices: Invoice[],
   expenses: Expense[],
   range?: DateRange,
+  manualSales: ManualSale[] = [],
+  writeOffs: StockWriteOff[] = [],
 ): PnlReport {
   const inWindow = (ts: number) => (range ? inRange(ts, range) : true);
   const active = invoices.filter((i) => i.status !== 'cancelled' && inWindow(i.date));
   const cancelled = invoices.filter((i) => i.status === 'cancelled' && inWindow(i.date));
-  const grossSales = sumMoney(active.map((i) => i.subtotal));
+  const manual = manualSales.filter((m) => inWindow(m.date));
+  const manualTotal = sumMoney(manual.map((m) => m.total));
+  const grossSales = addMoney(sumMoney(active.map((i) => i.subtotal)), manualTotal);
   const discounts = sumMoney(active.map((i) => i.discount));
-  const sales = sumMoney(active.map((i) => i.total));
-  const cogs = sumMoney(active.map((i) => i.cogs));
+  const sales = addMoney(sumMoney(active.map((i) => i.total)), manualTotal);
+  const cogs = addMoney(sumMoney(active.map((i) => i.cogs)), sumMoney(manual.map(manualSaleCogs)));
   const grossProfit = round2(sales - cogs);
   const exp = sumMoney(expenses.filter((e) => inWindow(e.date)).map((e) => e.amount));
-  const netProfit = round2(grossProfit - exp);
+  const writeOffValue = sumMoney(writeOffs.filter((w) => inWindow(w.date)).map((w) => w.value));
+  const netProfit = round2(grossProfit - exp - writeOffValue);
   return {
     grossSales,
     discounts,
@@ -93,10 +136,16 @@ export function computePnl(
     expenses: exp,
     netProfit,
     invoiceCount: active.length,
-    paidAmount: sumMoney(active.map((i) => i.paid)),
-    outstanding: sumMoney(active.map((i) => i.remaining)),
+    paidAmount: addMoney(sumMoney(active.map((i) => i.paid)), sumMoney(manual.map((m) => m.paid))),
+    outstanding: addMoney(
+      sumMoney(active.map((i) => i.remaining)),
+      sumMoney(manual.map((m) => round2(m.total - m.paid))),
+    ),
     cancelledCount: cancelled.length,
     cancelledTotal: sumMoney(cancelled.map((i) => i.total)),
+    manualCount: manual.length,
+    manualSales: manualTotal,
+    writeOffs: writeOffValue,
   };
 }
 
@@ -105,18 +154,22 @@ export async function getDashboard(
   monthRange: DateRange,
   seriesDays = 7,
 ): Promise<DashboardData> {
-  const { invoices, purchases, expenses, payments, supplierPayments, products } = await loadAll();
+  const { invoices, purchases, expenses, products, manualSales, writeOffs, customers, suppliers } = await loadAll();
 
-  const pnl = computePnl(invoices, expenses, range);
-  const monthPnl = computePnl(invoices, expenses, monthRange);
+  const pnl = computePnl(invoices, expenses, range, manualSales, writeOffs);
+  const monthPnl = computePnl(invoices, expenses, monthRange, manualSales, writeOffs);
 
   const todayStart = startOfDay(Date.now());
-  const todaySales = sumMoney(
-    invoices.filter((i) => i.status !== 'cancelled' && i.date >= todayStart).map((i) => i.total),
+  const todaySales = addMoney(
+    sumMoney(invoices.filter((i) => i.status !== 'cancelled' && i.date >= todayStart).map((i) => i.total)),
+    sumMoney(manualSales.filter((m) => m.date >= todayStart).map((m) => m.total)),
   );
   const monthStart = monthRange.from;
-  const monthSales = sumMoney(
-    invoices.filter((i) => i.status !== 'cancelled' && i.date >= monthStart && i.date <= monthRange.to).map((i) => i.total),
+  const monthSales = addMoney(
+    sumMoney(
+      invoices.filter((i) => i.status !== 'cancelled' && i.date >= monthStart && i.date <= monthRange.to).map((i) => i.total),
+    ),
+    sumMoney(manualSales.filter((m) => m.date >= monthStart && m.date <= monthRange.to).map((m) => m.total)),
   );
 
   // قيمة المخزون بالتكلفة
@@ -128,15 +181,29 @@ export async function getDashboard(
     activeProducts.reduce((acc, p) => acc + p.quantity * p.salePrice, 0),
   );
 
-  // ديون العملاء = المتبقي في الفواتير النشطة
-  const customerDebts = sumMoney(
-    invoices.filter((i) => i.status !== 'cancelled').map((i) => i.remaining),
+  // ديون العملاء = الرصيد السابق + متبقي الفواتير + متبقي السجلات الآجلة
+  const customerDebts = addMoney(
+    sumMoney(customers.map((c) => c.openingBalance ?? 0)),
+    sumMoney(invoices.filter((i) => i.status !== 'cancelled').map((i) => i.remaining)),
+    sumMoney(manualSales.map((m) => Math.max(0, round2(m.total - m.paid)))),
   );
 
-  // مستحقات الموردين = المتبقي في المشتريات المستلمة
-  const supplierDues = sumMoney(
-    purchases.filter((p) => p.status === 'received').map((p) => p.remaining),
+  // مستحقات الموردين = الرصيد السابق + المتبقي في المشتريات المستلمة
+  const supplierDues = addMoney(
+    sumMoney(suppliers.map((s) => s.openingBalance ?? 0)),
+    sumMoney(purchases.filter((p) => p.status === 'received').map((p) => p.remaining)),
   );
+
+  // تنبيهات الصلاحية (افتراضيًا 30 يومًا)
+  const today = startOfDay(Date.now());
+  const expiryAlerts = activeProducts
+    .filter((p) => p.expiryDate && p.quantity > 0)
+    .map((p) => {
+      const daysLeft = Math.round((startOfDay(p.expiryDate!) - today) / 86_400_000);
+      return { product: p, status: (daysLeft < 0 ? 'expired' : 'expiring') as 'expired' | 'expiring', daysLeft };
+    })
+    .filter((r) => r.daysLeft <= 30)
+    .sort((a, b) => a.daysLeft - b.daysLeft);
 
   const lowStock = activeProducts
     .filter((p) => p.quantity <= p.alertThreshold)
@@ -158,6 +225,14 @@ export async function getDashboard(
       topMap.set(item.productId, cur);
     }
   }
+  for (const sale of manualSales) {
+    if (range && !inRange(sale.date, range)) continue;
+    const key = sale.productId ?? `manual:${sale.productName}`;
+    const cur = topMap.get(key) ?? { productId: key, name: sale.productName, quantity: 0, revenue: 0 };
+    cur.quantity += sale.quantity;
+    cur.revenue = round2(cur.revenue + sale.total);
+    topMap.set(key, cur);
+  }
   const topProducts = [...topMap.values()].sort((a, b) => b.quantity - a.quantity).slice(0, 6);
 
   // سلسلة المبيعات اليومية
@@ -169,8 +244,15 @@ export async function getDashboard(
     const s = startOfDay(day.getTime());
     const e = endOfDay(day.getTime());
     const dayInvoices = invoices.filter((i) => i.status !== 'cancelled' && i.date >= s && i.date <= e);
-    const sales = sumMoney(dayInvoices.map((i) => i.total));
-    const cogs = sumMoney(dayInvoices.map((i) => i.cogs));
+    const dayManual = manualSales.filter((m) => m.date >= s && m.date <= e);
+    const sales = addMoney(
+      sumMoney(dayInvoices.map((i) => i.total)),
+      sumMoney(dayManual.map((m) => m.total)),
+    );
+    const cogs = addMoney(
+      sumMoney(dayInvoices.map((i) => i.cogs)),
+      sumMoney(dayManual.map(manualSaleCogs)),
+    );
     const dayExp = sumMoney(expenses.filter((x) => x.date >= s && x.date <= e).map((x) => x.amount));
     salesSeries.push({
       label: day.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' }),
@@ -180,9 +262,6 @@ export async function getDashboard(
     });
   }
 
-  // تجاهل ما لم نعد بحاجته هنا (تُستخدم في صفحات التقارير)
-  void payments;
-  void supplierPayments;
 
   return {
     pnl,
@@ -193,6 +272,8 @@ export async function getDashboard(
     inventoryRetailValue,
     customerDebts,
     supplierDues,
+    writeOffs: pnl.writeOffs,
+    expiryAlerts,
     lowStock,
     recentInvoices,
     topProducts,
@@ -217,10 +298,13 @@ export interface SalesDetailRow {
   profit: number;
 }
 
-export function buildSalesReport(invoices: Invoice[], range: DateRange): SalesDetailRow[] {
-  return invoices
+export function buildSalesReport(
+  invoices: Invoice[],
+  range: DateRange,
+  manualSales: ManualSale[] = [],
+): SalesDetailRow[] {
+  const invoiceRows: SalesDetailRow[] = invoices
     .filter((i) => inRange(i.date, range))
-    .sort((a, b) => b.date - a.date)
     .map((i) => ({
       id: i.id,
       number: i.number,
@@ -235,6 +319,26 @@ export function buildSalesReport(invoices: Invoice[], range: DateRange): SalesDe
       cogs: i.cogs,
       profit: i.status === 'cancelled' ? 0 : round2(i.total - i.cogs),
     }));
+  const manualRows: SalesDetailRow[] = manualSales
+    .filter((m) => inRange(m.date, range))
+    .map((m) => {
+      const cogs = manualSaleCogs(m);
+      return {
+        id: m.id,
+        number: m.number,
+        date: m.date,
+        customer: m.buyerName || '—',
+        status: 'manual',
+        subtotal: m.total,
+        discount: 0,
+        total: m.total,
+        paid: m.paid,
+        remaining: round2(m.total - m.paid),
+        cogs,
+        profit: round2(m.total - cogs),
+      };
+    });
+  return [...invoiceRows, ...manualRows].sort((a, b) => b.date - a.date);
 }
 
 export interface ProfitRow {
@@ -242,16 +346,23 @@ export interface ProfitRow {
   sales: number;
   cogs: number;
   expenses: number;
+  writeOffs: number;
   profit: number;
 }
 
-export function buildProfitReport(invoices: Invoice[], expenses: Expense[], range: DateRange): ProfitRow[] {
+export function buildProfitReport(
+  invoices: Invoice[],
+  expenses: Expense[],
+  range: DateRange,
+  manualSales: ManualSale[] = [],
+  writeOffs: StockWriteOff[] = [],
+): ProfitRow[] {
   const days = new Map<number, ProfitRow>();
   const ensure = (ts: number): ProfitRow => {
     const key = startOfDay(ts);
     let row = days.get(key);
     if (!row) {
-      row = { date: key, sales: 0, cogs: 0, expenses: 0, profit: 0 };
+      row = { date: key, sales: 0, cogs: 0, expenses: 0, writeOffs: 0, profit: 0 };
       days.set(key, row);
     }
     return row;
@@ -262,14 +373,25 @@ export function buildProfitReport(invoices: Invoice[], expenses: Expense[], rang
     row.sales = round2(row.sales + i.total);
     row.cogs = round2(row.cogs + i.cogs);
   }
+  for (const m of manualSales) {
+    if (!inRange(m.date, range)) continue;
+    const row = ensure(m.date);
+    row.sales = round2(row.sales + m.total);
+    row.cogs = round2(row.cogs + manualSaleCogs(m));
+  }
   for (const e of expenses) {
     if (!inRange(e.date, range)) continue;
     const row = ensure(e.date);
     row.expenses = round2(row.expenses + e.amount);
   }
+  for (const w of writeOffs) {
+    if (!inRange(w.date, range)) continue;
+    const row = ensure(w.date);
+    row.writeOffs = round2(row.writeOffs + w.value);
+  }
   return [...days.values()]
     .sort((a, b) => b.date - a.date)
-    .map((r) => ({ ...r, profit: round2(r.sales - r.cogs - r.expenses) }));
+    .map((r) => ({ ...r, profit: round2(r.sales - r.cogs - r.expenses - r.writeOffs) }));
 }
 
 export interface InventoryRow {
@@ -310,7 +432,11 @@ export interface TopProductRow {
   profit: number;
 }
 
-export function buildTopProducts(invoices: Invoice[], range: DateRange): TopProductRow[] {
+export function buildTopProducts(
+  invoices: Invoice[],
+  range: DateRange,
+  manualSales: ManualSale[] = [],
+): TopProductRow[] {
   const map = new Map<string, TopProductRow>();
   for (const inv of invoices) {
     if (inv.status === 'cancelled' || !inRange(inv.date, range)) continue;
@@ -323,9 +449,20 @@ export function buildTopProducts(invoices: Invoice[], range: DateRange): TopProd
       const share = inv.subtotal > 0 ? item.lineTotal / inv.subtotal : 0;
       const net = subMoney(item.lineTotal, inv.discount * share);
       row.revenue = addMoney(row.revenue, net);
-      row.cost = addMoney(row.cost, mulMoney(item.quantity, item.unitCost));
+      row.cost = addMoney(row.cost, mulCost(item.quantity, item.unitCost));
       map.set(item.productId, row);
     }
+  }
+  for (const m of manualSales) {
+    if (!inRange(m.date, range)) continue;
+    const key = m.productId ?? `manual:${m.productName}`;
+    const row =
+      map.get(key) ??
+      { productId: key, name: m.productName, quantity: 0, revenue: 0, cost: 0, profit: 0 };
+    row.quantity += m.quantity;
+    row.revenue = addMoney(row.revenue, m.total);
+    row.cost = addMoney(row.cost, manualSaleCogs(m));
+    map.set(key, row);
   }
   return [...map.values()]
     .map((r) => ({ ...r, revenue: round2(r.revenue), profit: round2(r.revenue - r.cost) }))

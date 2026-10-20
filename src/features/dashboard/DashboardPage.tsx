@@ -12,6 +12,12 @@ import {
   Users,
   Wallet,
   Building2,
+  Camera,
+  ClipboardList,
+  Tag,
+  ScanLine,
+  Trash2,
+  CalendarClock,
 } from 'lucide-react';
 import {
   Bar,
@@ -85,6 +91,31 @@ export function DashboardPage() {
         </Link>
       </div>
 
+      {/* اختصارات سريعة للميزات الجديدة */}
+      <div className="grid gap-2 sm:grid-cols-3">
+        <Link to="/sales-log" className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2.5 transition-colors hover:border-brand-300 hover:bg-brand-50/40 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-brand-700 dark:hover:bg-brand-900/10">
+          <span className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 text-brand-600 dark:bg-brand-900/30 dark:text-brand-300"><ClipboardList size={16} /></span>
+            {t('quickSalesLog')}
+          </span>
+          <ArrowLeft size={14} className="text-slate-300 rtl:rotate-180" />
+        </Link>
+        <Link to="/scan" className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2.5 transition-colors hover:border-brand-300 hover:bg-brand-50/40 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-brand-700 dark:hover:bg-brand-900/10">
+          <span className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300"><Camera size={16} /></span>
+            {t('quickScan')}
+          </span>
+          <ScanLine size={14} className="text-slate-300" />
+        </Link>
+        <Link to="/prices" className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2.5 transition-colors hover:border-brand-300 hover:bg-brand-50/40 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-brand-700 dark:hover:bg-brand-900/10">
+          <span className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300"><Tag size={16} /></span>
+            {t('quickPrices')}
+          </span>
+          <ArrowLeft size={14} className="text-slate-300 rtl:rotate-180" />
+        </Link>
+      </div>
+
       {/* البطاقات المالية */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
         <StatCard title={t('todaySales')} amount={data.todaySales} icon={<ShoppingCart size={18} />} accent="brand" loading={loading} />
@@ -110,6 +141,8 @@ export function DashboardPage() {
           accent={data.lowStock.length > 0 ? 'amber' : 'emerald'}
           loading={loading}
         />
+        <StatCard title={t('cashCollected')} amount={pnl.paidAmount} icon={<Wallet size={18} />} accent="emerald" loading={loading} />
+        <StatCard title={t('writeOffs')} amount={pnl.writeOffs} icon={<Trash2 size={18} />} accent="rose" loading={loading} />
         <StatCard
           title={t('netProfit')}
           sub={t('thisMonth')}
@@ -237,13 +270,51 @@ export function DashboardPage() {
         </div>
       </div>
 
+      {/* تنبيهات الصلاحية */}
+      <div className="card overflow-hidden">
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+          <h2 className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+            <CalendarClock size={16} className="text-amber-500" /> {t('expiryAlerts')}
+          </h2>
+          <Link to="/products" className="text-xs font-bold text-brand-600 hover:underline">
+            {t('productsTitle')}
+          </Link>
+        </div>
+        {data.expiryAlerts.length === 0 ? (
+          <EmptyState icon={<CalendarClock size={24} />} title={t('noExpiry')} hint={t('emptyHint')} />
+        ) : (
+          <ul className="max-h-64 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">
+            {data.expiryAlerts.map((row) => (
+              <li key={row.product.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs">
+                <div className="min-w-0">
+                  <p className="truncate font-bold text-slate-700 dark:text-slate-200">{row.product.name}</p>
+                  <p className="text-[11px] text-slate-400">
+                    {row.product.quantity} · {row.product.batchNumber || '—'}
+                  </p>
+                </div>
+                <Badge tone={row.status === 'expired' ? 'rose' : 'amber'}>
+                  {row.status === 'expired' ? t('expired') : `${row.daysLeft} ${t('daysLeft')}`}
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       {/* ملخص الفترة */}
       <div className="card grid grid-cols-2 gap-4 p-4 text-xs sm:grid-cols-4">
         <SummaryItem label={t('netSales')} value={money(pnl.sales)} />
         <SummaryItem label={t('cogs')} value={money(pnl.cogs)} />
+        <SummaryItem label={t('grossProfit')} value={money(pnl.grossProfit)} />
         <SummaryItem label={t('expensesTotal')} value={money(pnl.expenses)} />
+        <SummaryItem label={t('writeOffs')} value={money(pnl.writeOffs)} tone="negative" />
+        <SummaryItem label={t('cashCollected')} value={money(pnl.paidAmount)} />
+        <SummaryItem label={t('receivables')} value={money(data.customerDebts)} />
         <SummaryItem label={t('netProfit')} value={money(pnl.netProfit)} strong tone={pnl.netProfit >= 0 ? 'positive' : 'negative'} />
       </div>
+      <p className="px-1 text-[10px] text-slate-400">
+        {t('inventoryValue')}: {money(data.inventoryCostValue)} — {t('inventoryNotProfit')} · {t('debtCollection')}: {t('notRevenue')}
+      </p>
     </div>
   );
 }

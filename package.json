@@ -4,21 +4,32 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
-    "build": "tsc -b && vite build",
+    "dev": "node scripts/prepare-ocr.mjs && vite --host 0.0.0.0",
+    "build": "node scripts/prepare-ocr.mjs && tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepare:ocr": "node scripts/prepare-ocr.mjs",
+    "postinstall": "node scripts/prepare-ocr.mjs"
   },
   "dependencies": {
     "idb": "^8.0.0",
     "lucide-react": "^0.469.0",
+    "pdfjs-dist": "^6.4.299",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",
-    "recharts": "^2.15.0"
+    "recharts": "^2.15.0",
+    "tesseract.js": "^7.0.0",
+    "tesseract.js-core": "^7.0.0",
+    "wasm-feature-detect": "^1.9.0"
   },
   "devDependencies": {
+    "@expo-google-fonts/noto-naskh-arabic": "^0.4.5",
+    "@napi-rs/canvas": "^1.0.11",
+    "@tesseract.js-data/ara": "^1.0.0",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "@types/node": "^22.20.5",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",

@@ -7,6 +7,7 @@ import {
   Building2,
   CreditCard,
   Download,
+  Trash2,
   Printer,
   Receipt,
   ShoppingCart,
@@ -301,6 +302,7 @@ export function ReportsPage() {
           <StatCard title={t('cogs')} value={money(pnl.cogs)} icon={<Boxes size={17} />} accent="amber" loading={loading} />
           <StatCard title={t('grossProfit')} value={money(pnl.grossProfit)} icon={<TrendingUp size={17} />} accent="emerald" loading={loading} />
           <StatCard title={t('expensesTotal')} value={money(pnl.expenses)} icon={<CreditCard size={17} />} accent="rose" loading={loading} />
+          <StatCard title={t('writeOffs')} value={money(pnl.writeOffs)} icon={<Trash2 size={17} />} accent="rose" loading={loading} />
           <StatCard
             title={t('netProfit')}
             value={money(pnl.netProfit)}
@@ -616,7 +618,8 @@ export function ReportsPage() {
           <AlertTriangle size={15} />
           <span>
             {t('netSales')}: <strong>{money(pnl.sales)}</strong> − {t('cogs')}: <strong>{money(pnl.cogs)}</strong> = {t('grossProfit')}:{' '}
-            <strong>{money(pnl.grossProfit)}</strong> − {t('expensesTotal')}: <strong>{money(pnl.expenses)}</strong> = {t('netProfit')}:{' '}
+            <strong>{money(pnl.grossProfit)}</strong> − {t('expensesTotal')}: <strong>{money(pnl.expenses)}</strong> − {t('writeOffs')}:{' '}
+            <strong>{money(pnl.writeOffs)}</strong> = {t('netProfit')}:{' '}
             <strong>{money(pnl.netProfit)}</strong>
             {pnl.cancelledCount > 0 && (
               <>
