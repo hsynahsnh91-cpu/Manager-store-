@@ -12,6 +12,10 @@ import { ExpensesPage } from './features/expenses/ExpensesPage';
 import { CashPage } from './features/cash/CashPage';
 import { ReportsPage } from './features/reports/ReportsPage';
 import { SettingsPage } from './features/settings/SettingsPage';
+import { SalesLogPage } from './features/sales-log/SalesLogPage';
+import { ScanInvoicePage } from './features/scan/ScanInvoicePage';
+import { InvoiceLibraryPage } from './features/scan/InvoiceLibraryPage';
+import { PricesPage } from './features/prices/PricesPage';
 
 function LoadingScreen() {
   return (
@@ -31,9 +35,13 @@ function AppRoutes() {
     <Routes>
       <Route element={<AppShell />}>
         <Route path="/" element={<DashboardPage />} />
+        <Route path="/sales-log" element={<SalesLogPage />} />
         <Route path="/products" element={<ProductsPage />} />
+        <Route path="/prices" element={<PricesPage />} />
         <Route path="/pos" element={<POSPage />} />
         <Route path="/invoices" element={<InvoicesPage />} />
+        <Route path="/scan" element={<ScanInvoicePage />} />
+        <Route path="/invoice-library" element={<InvoiceLibraryPage />} />
         <Route path="/purchases" element={<PurchasesPage />} />
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/suppliers" element={<SuppliersPage />} />

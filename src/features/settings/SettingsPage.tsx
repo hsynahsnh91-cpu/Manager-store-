@@ -9,6 +9,8 @@ import {
   Sun,
   Upload,
   Palette,
+  Tags,
+  Sparkles,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useI18n } from '../../i18n';
@@ -154,6 +156,49 @@ export function SettingsPage() {
             onChange={(e) => setForm({ ...form, expenseCategories: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
           />
         </div>
+      </section>
+
+      {/* التسعير */}
+      <section className="card p-5">
+        <h2 className="mb-4 flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+          <Tags size={16} className="text-brand-600" /> {t('pricingTitle')}
+        </h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Select
+            label={t('pricingPolicy')}
+            value={form.salePricePolicy ?? 'ask'}
+            onChange={(e) => setForm({ ...form, salePricePolicy: e.target.value as Settings['salePricePolicy'] })}
+          >
+            <option value="never">{t('pricingPolicyNever')}</option>
+            <option value="ask">{t('pricingPolicyAsk')}</option>
+            <option value="auto">{t('pricingPolicyAuto')}</option>
+          </Select>
+          <Input
+            type="number"
+            min="0"
+            step="1"
+            label={t('defaultMargin')}
+            value={form.defaultMarginPercent ?? 25}
+            onChange={(e) => setForm({ ...form, defaultMarginPercent: Number(e.target.value) })}
+          />
+          <Input
+            type="number"
+            min="0"
+            step="0.05"
+            label={t('roundSalePrice')}
+            value={form.roundSalePriceTo ?? 0.25}
+            onChange={(e) => setForm({ ...form, roundSalePriceTo: Number(e.target.value) })}
+          />
+          <Input
+            label={t('manualSalePrefix')}
+            value={form.manualSalePrefix ?? 'MS'}
+            onChange={(e) => setForm({ ...form, manualSalePrefix: e.target.value })}
+            dir="ltr"
+          />
+        </div>
+        <p className="mt-3 flex items-center gap-1.5 text-[11px] text-slate-400">
+          <Sparkles size={13} /> {t('pricingHint')}
+        </p>
       </section>
 
       {/* البيانات */}
