@@ -245,6 +245,7 @@ export function SalesLogPage() {
     setErrors(errs);
     if (Object.keys(errs).length > 0) return;
 
+    if (saving) return;
     setSaving(true);
     try {
       const paid = form.paid.trim() === '' ? undefined : round2(Number(form.paid));

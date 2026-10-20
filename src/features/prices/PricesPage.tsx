@@ -4,6 +4,7 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   Camera,
+  Download,
   History,
   Minus,
   Pencil,
@@ -24,6 +25,7 @@ import { Badge, EmptyState, SkeletonRows } from '../../components/UI';
 import { formatDate } from '../../utils/dates';
 import { formatMoney, round2 } from '../../utils/money';
 import { normalizeArabic } from '../../utils/text';
+import { downloadCSV } from '../../utils/csv';
 import { listProducts } from '../../services/products';
 import {
   createCategory,
@@ -240,6 +242,24 @@ export function PricesPage() {
 
   const invoicesFor = (product: Product): ScannedInvoice[] => invoicesForProduct(invoices, product.id, product.name);
 
+  const exportPrices = () => {
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadCSV(
+      `prices-${stamp}`,
+      [t('productName'), t('productCode'), t('barcode'), t('category'), t('supplier'), t('purchasePrice'), t('salePrice'), t('lastUpdate')],
+      filtered.map((product) => [
+        product.name,
+        product.code,
+        product.barcode,
+        product.category,
+        supplierName(product.supplierId ?? product.lastSupplierId),
+        product.purchasePrice,
+        product.salePrice,
+        product.purchasePriceUpdatedAt ? formatDate(product.purchasePriceUpdatedAt, lang) : '',
+      ]),
+    );
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -247,9 +267,14 @@ export function PricesPage() {
           <h1 className="text-lg font-extrabold text-slate-800 dark:text-white">{t('pricesTitle')}</h1>
           <p className="mt-0.5 text-xs text-slate-400">{t('pricesSubtitle')}</p>
         </div>
-        <Link to="/scan">
-          <Button size="sm" variant="secondary" icon={<Camera size={15} />}>{t('scanInvoice')}</Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" icon={<Download size={15} />} onClick={exportPrices}>
+            {t('exportCsv')}
+          </Button>
+          <Link to="/scan">
+            <Button size="sm" variant="secondary" icon={<Camera size={15} />}>{t('scanInvoice')}</Button>
+          </Link>
+        </div>
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">

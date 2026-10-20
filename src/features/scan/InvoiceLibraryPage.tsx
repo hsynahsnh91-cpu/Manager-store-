@@ -6,6 +6,7 @@ import {
   ArrowUpRight,
   Camera,
   CheckCircle2,
+  Download,
   FileText,
   Image as ImageIcon,
   Minus,
@@ -22,6 +23,7 @@ import { ConfirmDialog, Modal } from '../../components/Modal';
 import { Badge, EmptyState, SkeletonRows } from '../../components/UI';
 import { formatDate, fromDateInput } from '../../utils/dates';
 import { formatMoney } from '../../utils/money';
+import { downloadCSV } from '../../utils/csv';
 import {
   deleteScannedInvoice,
   filterInvoiceLibrary,
@@ -104,6 +106,23 @@ export function InvoiceLibraryPage() {
   const totalValue = useMemo(() => filtered.reduce((a, i) => a + i.total, 0), [filtered]);
   const image = useImageUrl(selected?.imageId ?? null);
 
+  const exportLibrary = () => {
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadCSV(
+      `invoice-library-${stamp}`,
+      [t('invoiceNumber'), t('supplier'), t('invoiceDateCol'), t('scanDate'), t('itemsCol'), t('totalLabel'), t('fieldConfidence')],
+      filtered.map((inv) => [
+        inv.invoiceNumber,
+        inv.supplierName,
+        formatDate(inv.invoiceDate, lang),
+        formatDate(inv.scanDate, lang),
+        inv.items.filter((i) => i.matchState !== 'ignored').length,
+        inv.total,
+        `${Math.round(inv.ocrConfidence)}%`,
+      ]),
+    );
+  };
+
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     setDeleting(true);
@@ -132,9 +151,14 @@ export function InvoiceLibraryPage() {
           <h1 className="text-lg font-extrabold text-slate-800 dark:text-white">{t('libraryTitle')}</h1>
           <p className="mt-0.5 text-xs text-slate-400">{t('librarySubtitle')}</p>
         </div>
-        <Link to="/scan">
-          <Button size="sm" icon={<Camera size={15} />}>{t('scanInvoice')}</Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" icon={<Download size={15} />} onClick={exportLibrary}>
+            {t('exportCsv')}
+          </Button>
+          <Link to="/scan">
+            <Button size="sm" icon={<Camera size={15} />}>{t('scanInvoice')}</Button>
+          </Link>
+        </div>
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">

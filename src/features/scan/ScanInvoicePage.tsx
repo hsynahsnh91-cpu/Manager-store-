@@ -409,6 +409,7 @@ export function ScanInvoicePage() {
   };
 
   const submit = async (allowDuplicate = false) => {
+    if (saving) return; // منع الحفظ المزدوج عند النقر المتكرر
     if (activeItems.length === 0) {
       toast(t('noItemsFound'), 'error');
       return;
