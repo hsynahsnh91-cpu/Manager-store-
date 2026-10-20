@@ -908,6 +908,7 @@ export function ScanInvoicePage() {
                             value={row.name}
                             onChange={(e) => updateItem(row.id, { name: e.target.value, needsReview: false })}
                             className={row.needsReview ? 'border-amber-400' : ''}
+                            aria-invalid={row.needsReview}
                           />
                           <div className="mt-1 flex items-center gap-1.5">
                             {row.needsReview && <Badge tone="amber">{t('needsReview')}</Badge>}
@@ -925,6 +926,9 @@ export function ScanInvoicePage() {
                             step="any"
                             value={row.quantity}
                             onChange={(e) => updateItem(row.id, { quantity: e.target.value, needsReview: false })}
+                            className={row.needsReview ? 'border-amber-400' : ''}
+                            aria-invalid={row.needsReview}
+                            title={row.needsReview ? t('needsReview') : undefined}
                           />
                         </td>
                         <td className="px-3 py-2">
@@ -933,6 +937,9 @@ export function ScanInvoicePage() {
                             step="0.01"
                             value={row.unitPrice}
                             onChange={(e) => updateItem(row.id, { unitPrice: e.target.value, needsReview: false })}
+                            className={row.needsReview ? 'border-amber-400' : ''}
+                            aria-invalid={row.needsReview}
+                            title={row.needsReview ? t('needsReview') : undefined}
                           />
                         </td>
                         <td className="px-3 py-2 font-mono text-slate-600 dark:text-slate-300">
