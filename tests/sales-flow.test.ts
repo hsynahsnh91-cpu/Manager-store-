@@ -4,16 +4,15 @@
  * دفعات العملاء، المشتريات، المرتجعات، المصروفات، والأرباح.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { resetDBConnection, getDB, getAll } from '../src/services/db';
+import { resetDBConnection, getDB } from '../src/services/db';
 import { createProduct, listProducts, updateProduct, adjustStock, isLowStock } from '../src/services/products';
-import { createSale, cancelInvoice, listInvoices, getInvoice, SaleError, getNextInvoiceNumber, computeCartTotals } from '../src/services/sales';
+import { createSale, cancelInvoice, listInvoices, getInvoice, SaleError, computeCartTotals } from '../src/services/sales';
 import { createCustomer, listCustomersWithBalance, getCustomerBalance, getCustomerStatement, createCustomer as createCust } from '../src/services/customers';
 import { recordCustomerPayment, PaymentError } from '../src/services/payments';
 import { createPurchase, receivePurchase, cancelPurchase, paySupplier, computePurchaseTotals, listPurchases } from '../src/services/purchases';
 import { createExpense, listExpenses, deleteExpense } from '../src/services/expenses';
 import { getBalances, listCashTransactions, deposit, withdraw, transfer } from '../src/services/cash';
 import { computePnl, buildSalesReport, buildInventoryReport, buildTopProducts } from '../src/services/reports';
-import type { Invoice } from '../src/types';
 import { uid } from '../src/utils/id';
 
 async function freshDB() {
