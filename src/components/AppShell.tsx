@@ -8,6 +8,10 @@ import {
   LayoutDashboard,
   Menu,
   Moon,
+  ScanLine,
+  Library,
+  Tag,
+  ClipboardList,
   PackagePlus,
   Receipt,
   Settings,
@@ -21,6 +25,7 @@ import { useState } from 'react';
 import { useI18n } from '../i18n';
 import { useApp } from '../context/AppContext';
 import { ToastHost } from '../components/ToastHost';
+import { GlobalSearch } from '../components/GlobalSearch';
 import type { TranslationKey } from '../i18n/ar';
 
 interface NavItem {
@@ -32,8 +37,12 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: '/', labelKey: 'navDashboard', icon: LayoutDashboard },
   { to: '/pos', labelKey: 'navPos', icon: ShoppingCart },
+  { to: '/sales-log', labelKey: 'navSalesLog', icon: ClipboardList },
   { to: '/products', labelKey: 'navProducts', icon: Boxes },
+  { to: '/prices', labelKey: 'navPrices', icon: Tag },
   { to: '/invoices', labelKey: 'navInvoices', icon: Receipt },
+  { to: '/scan', labelKey: 'navScan', icon: ScanLine },
+  { to: '/invoice-library', labelKey: 'navInvoiceLibrary', icon: Library },
   { to: '/purchases', labelKey: 'navPurchases', icon: PackagePlus },
   { to: '/customers', labelKey: 'navCustomers', icon: Users },
   { to: '/suppliers', labelKey: 'navSuppliers', icon: Building2 },
@@ -131,6 +140,7 @@ export function AppShell() {
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-bold text-slate-700 dark:text-slate-200">{settings.storeName}</p>
           </div>
+          <GlobalSearch />
           <button
             onClick={toggleLang}
             className="h-8 rounded-lg border border-slate-200 px-2.5 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"

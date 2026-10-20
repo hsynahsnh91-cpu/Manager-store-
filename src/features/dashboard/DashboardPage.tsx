@@ -12,6 +12,10 @@ import {
   Users,
   Wallet,
   Building2,
+  Camera,
+  ClipboardList,
+  Tag,
+  ScanLine,
 } from 'lucide-react';
 import {
   Bar,
@@ -82,6 +86,31 @@ export function DashboardPage() {
         >
           <ShoppingCart size={14} />
           {t('posTitle')}
+        </Link>
+      </div>
+
+      {/* اختصارات سريعة للميزات الجديدة */}
+      <div className="grid gap-2 sm:grid-cols-3">
+        <Link to="/sales-log" className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2.5 transition-colors hover:border-brand-300 hover:bg-brand-50/40 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-brand-700 dark:hover:bg-brand-900/10">
+          <span className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 text-brand-600 dark:bg-brand-900/30 dark:text-brand-300"><ClipboardList size={16} /></span>
+            {t('quickSalesLog')}
+          </span>
+          <ArrowLeft size={14} className="text-slate-300 rtl:rotate-180" />
+        </Link>
+        <Link to="/scan" className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2.5 transition-colors hover:border-brand-300 hover:bg-brand-50/40 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-brand-700 dark:hover:bg-brand-900/10">
+          <span className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300"><Camera size={16} /></span>
+            {t('quickScan')}
+          </span>
+          <ScanLine size={14} className="text-slate-300" />
+        </Link>
+        <Link to="/prices" className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2.5 transition-colors hover:border-brand-300 hover:bg-brand-50/40 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-brand-700 dark:hover:bg-brand-900/10">
+          <span className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300"><Tag size={16} /></span>
+            {t('quickPrices')}
+          </span>
+          <ArrowLeft size={14} className="text-slate-300 rtl:rotate-180" />
         </Link>
       </div>
 
