@@ -1,16 +1,33 @@
 import type { ReactNode } from 'react';
+import { useAnimatedNumber } from '../hooks/useAnimatedNumber';
+import { useApp } from '../context/AppContext';
+import { formatMoney } from '../utils/money';
+
+/**
+ * رقم مالي يتحوّل سلسًا عند تغيّر البيانات (يحترم prefers-reduced-motion).
+ * يُستخدم داخل StatCard عبر القيمة amount.
+ */
+export function AnimatedMoney({ amount }: { amount: number }) {
+  const { settings } = useApp();
+  const animated = useAnimatedNumber(amount);
+  return <>{formatMoney(animated, settings.currency)}</>;
+}
 
 /** بطاقة إحصائية مالية */
 export function StatCard({
   title,
   value,
+  amount,
   icon,
   accent = 'brand',
   sub,
   loading,
 }: {
   title: string;
-  value: string;
+  /** نص جاهز للعرض — يُفضَّل amount للتحريك */
+  value?: string;
+  /** مبلغ مالي يُعرض مع حركة تحديث سلسة */
+  amount?: number;
   icon: ReactNode;
   accent?: 'brand' | 'emerald' | 'amber' | 'rose' | 'violet';
   sub?: ReactNode;
@@ -32,7 +49,7 @@ export function StatCard({
             <div className="mt-2 h-7 w-24 animate-pulse-soft rounded bg-slate-200 dark:bg-slate-700" />
           ) : (
             <p className="mt-1 truncate text-xl font-bold text-slate-800 dark:text-slate-100" dir="ltr" style={{ textAlign: 'start' }}>
-              {value}
+              {amount !== undefined ? <AnimatedMoney amount={amount} /> : value}
             </p>
           )}
           {sub && <div className="mt-1 text-xs text-slate-400">{sub}</div>}

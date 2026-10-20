@@ -163,6 +163,7 @@ export const en: Record<TranslationKey, string> = {
   newPurchase: 'New Purchase Invoice',
   receivePurchase: 'Receive',
   receiveConfirm: 'Receive this invoice? Quantities will be added to stock.',
+  cancelPurchaseConfirm: 'Cancel this purchase invoice? Received quantities are removed from stock; the history record is kept.',
   received: 'Received',
   ordered: 'Ordered',
   purchaseNumber: 'Purchase #',

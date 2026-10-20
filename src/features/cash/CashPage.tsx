@@ -111,21 +111,21 @@ export function CashPage() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
           title={t('cashBalance')}
-          value={formatMoney(balances.data?.cash ?? 0, settings.currency)}
+          amount={balances.data?.cash ?? 0}
           icon={<Wallet size={19} />}
           accent="emerald"
           loading={balances.loading}
         />
         <StatCard
           title={t('bankBalance')}
-          value={formatMoney(balances.data?.bank ?? 0, settings.currency)}
+          amount={balances.data?.bank ?? 0}
           icon={<ArrowRightLeft size={19} />}
           accent="brand"
           loading={balances.loading}
         />
         <StatCard
           title={t('totalBalance')}
-          value={formatMoney(balances.data?.total ?? 0, settings.currency)}
+          amount={balances.data?.total ?? 0}
           icon={<Wallet size={19} />}
           accent="violet"
           loading={balances.loading}

@@ -168,6 +168,7 @@ export const ar = {
   newPurchase: 'فاتورة شراء جديدة',
   receivePurchase: 'استلام',
   receiveConfirm: 'تأكيد استلام هذه الفاتورة؟ ستُضاف الكميات إلى المخزون.',
+  cancelPurchaseConfirm: 'إلغاء فاتورة الشراء؟ في الفاتورة المستلمة تُعكس الكميات من المخزون، ويُحفظ السجل التاريخي.',
   received: 'مستلمة',
   ordered: 'مرسلة',
   purchaseNumber: 'رقم فاتورة الشراء',

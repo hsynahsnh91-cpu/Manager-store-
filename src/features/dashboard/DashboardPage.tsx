@@ -87,8 +87,8 @@ export function DashboardPage() {
 
       {/* البطاقات المالية */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
-        <StatCard title={t('todaySales')} value={money(data.todaySales)} icon={<ShoppingCart size={18} />} accent="brand" loading={loading} />
-        <StatCard title={t('monthSales')} value={money(data.monthSales)} icon={<Receipt size={18} />} accent="brand" loading={loading} />
+        <StatCard title={t('todaySales')} amount={data.todaySales} icon={<ShoppingCart size={18} />} accent="brand" loading={loading} />
+        <StatCard title={t('monthSales')} amount={data.monthSales} icon={<Receipt size={18} />} accent="brand" loading={loading} />
         <StatCard
           title={`${t('invoiceCount')} (${t('today')})`}
           value={String(pnl.invoiceCount)}
@@ -96,13 +96,13 @@ export function DashboardPage() {
           accent="violet"
           loading={loading}
         />
-        <StatCard title={t('expensesTotal')} value={money(pnl.expenses)} icon={<TrendingDown size={18} />} accent="rose" loading={loading} />
-        <StatCard title={t('cogs')} value={money(pnl.cogs)} icon={<Boxes size={18} />} accent="amber" loading={loading} />
-        <StatCard title={t('grossProfit')} value={money(pnl.grossProfit)} icon={<TrendingUp size={18} />} accent="emerald" loading={loading} />
-        <StatCard title={t('netProfit')} value={money(pnl.netProfit)} icon={<Banknote size={18} />} accent={pnl.netProfit >= 0 ? 'emerald' : 'rose'} loading={loading} />
-        <StatCard title={t('inventoryValue')} value={money(data.inventoryCostValue)} icon={<Boxes size={18} />} accent="brand" loading={loading} />
-        <StatCard title={t('customerDebtsTotal')} value={money(data.customerDebts)} icon={<Users size={18} />} accent="rose" loading={loading} />
-        <StatCard title={t('supplierDuesTotal')} value={money(data.supplierDues)} icon={<Building2 size={18} />} accent="amber" loading={loading} />
+        <StatCard title={t('expensesTotal')} amount={pnl.expenses} icon={<TrendingDown size={18} />} accent="rose" loading={loading} />
+        <StatCard title={t('cogs')} amount={pnl.cogs} icon={<Boxes size={18} />} accent="amber" loading={loading} />
+        <StatCard title={t('grossProfit')} amount={pnl.grossProfit} icon={<TrendingUp size={18} />} accent="emerald" loading={loading} />
+        <StatCard title={t('netProfit')} amount={pnl.netProfit} icon={<Banknote size={18} />} accent={pnl.netProfit >= 0 ? 'emerald' : 'rose'} loading={loading} />
+        <StatCard title={t('inventoryValue')} amount={data.inventoryCostValue} icon={<Boxes size={18} />} accent="brand" loading={loading} />
+        <StatCard title={t('customerDebtsTotal')} amount={data.customerDebts} icon={<Users size={18} />} accent="rose" loading={loading} />
+        <StatCard title={t('supplierDuesTotal')} amount={data.supplierDues} icon={<Building2 size={18} />} accent="amber" loading={loading} />
         <StatCard
           title={t('lowStockProducts')}
           value={String(data.lowStock.length)}
@@ -113,7 +113,7 @@ export function DashboardPage() {
         <StatCard
           title={t('netProfit')}
           sub={t('thisMonth')}
-          value={money(monthPnl.netProfit)}
+          amount={monthPnl.netProfit}
           icon={<Wallet size={18} />}
           accent={monthPnl.netProfit >= 0 ? 'emerald' : 'rose'}
           loading={loading}

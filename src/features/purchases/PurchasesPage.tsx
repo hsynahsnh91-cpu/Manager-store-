@@ -525,7 +525,7 @@ export function PurchasesPage() {
           </>
         }
       >
-        <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">{t('receiveConfirm')}</p>
+        <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">{t('cancelPurchaseConfirm')}</p>
         <Textarea label={t('cancelReason')} value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} />
       </Modal>
     </div>
