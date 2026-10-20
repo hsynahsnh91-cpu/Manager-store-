@@ -17,6 +17,10 @@ export const DEFAULT_SETTINGS: Settings = {
   lowStockDefault: 5,
   expenseCategories: ['إيجار', 'رواتب', 'كهرباء ومياه', 'نقل وشحن', 'صيانة', 'تغليف', 'أخرى'],
   updatedAt: 0,
+  salePricePolicy: 'ask',
+  defaultMarginPercent: 25,
+  roundSalePriceTo: 0.25,
+  manualSalePrefix: 'MS',
 };
 
 export async function getSettings(): Promise<Settings> {

@@ -52,9 +52,13 @@ describe('الواجهة — صياغة الصفحات', () => {
   it('يتنقل إلى جميع الصفحات دون أخطاء', async () => {
     root = await renderApp();
     const routes = [
+      '#/sales-log',
       '#/products',
+      '#/prices',
       '#/pos',
       '#/invoices',
+      '#/scan',
+      '#/invoice-library',
       '#/purchases',
       '#/customers',
       '#/suppliers',

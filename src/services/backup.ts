@@ -4,13 +4,19 @@
 import { getDB } from './db';
 import { DEFAULT_SETTINGS } from './settings';
 import type {
+  AuditEntry,
   CashTransaction,
   Customer,
   CustomerPayment,
   Expense,
   Invoice,
+  InvoiceImage,
+  ManualSale,
+  PriceChange,
   Product,
+  ProductCategory,
   Purchase,
+  ScannedInvoice,
   Settings,
   Supplier,
   SupplierPayment,
@@ -32,6 +38,13 @@ export interface BackupFile {
     supplierPayments: SupplierPayment[];
     settings: Settings;
     meta: { key: string; value: unknown }[];
+    // الإصدار 2 — اختيارية عند الاستعادة للحفاظ على توافق النسخ القديمة
+    manualSales?: ManualSale[];
+    categories?: ProductCategory[];
+    priceHistory?: PriceChange[];
+    scannedInvoices?: ScannedInvoice[];
+    invoiceImages?: { id: string; mimeType: string; name: string; size: number; createdAt: number; width: number; height: number; dataUrl: string }[];
+    audit?: AuditEntry[];
   };
 }
 
@@ -47,11 +60,57 @@ const STORES = [
   'supplierPayments',
   'settings',
   'meta',
+  'manualSales',
+  'categories',
+  'priceHistory',
+  'scannedInvoices',
+  'invoiceImages',
+  'audit',
 ] as const;
+
+/** Blob → data URL (لحفظ صور الفواتير في ملف النسخة الاحتياطية) */
+export async function blobToDataUrl(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  const type = blob.type || 'application/octet-stream';
+  return `data:${type};base64,${btoa(binary)}`;
+}
+
+/** data URL → Blob */
+export function dataUrlToBlob(dataUrl: string): Blob {
+  const [head, body = ''] = dataUrl.split(',');
+  const mime = /data:([^;]+)/.exec(head)?.[1] ?? 'image/png';
+  const binary = atob(body);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
 
 export async function exportBackup(): Promise<BackupFile> {
   const db = await getDB();
-  const [products, customers, suppliers, invoices, purchases, expenses, cash, customerPayments, supplierPayments, settings, meta] =
+  const [
+    products,
+    customers,
+    suppliers,
+    invoices,
+    purchases,
+    expenses,
+    cash,
+    customerPayments,
+    supplierPayments,
+    settings,
+    meta,
+    manualSales,
+    categories,
+    priceHistory,
+    scannedInvoices,
+    images,
+    audit,
+  ] =
     await Promise.all([
       db.getAll('products'),
       db.getAll('customers'),
@@ -64,11 +123,30 @@ export async function exportBackup(): Promise<BackupFile> {
       db.getAll('supplierPayments'),
       db.get('settings', 'app'),
       db.getAll('meta'),
+      db.getAll('manualSales'),
+      db.getAll('categories'),
+      db.getAll('priceHistory'),
+      db.getAll('scannedInvoices'),
+      db.getAll('invoiceImages'),
+      db.getAll('audit'),
     ]);
+
+  const invoiceImages = await Promise.all(
+    images.map(async (img) => ({
+      id: img.id,
+      mimeType: img.mimeType,
+      name: img.name,
+      size: img.size,
+      createdAt: img.createdAt,
+      width: img.width,
+      height: img.height,
+      dataUrl: await blobToDataUrl(img.blob),
+    })),
+  );
 
   return {
     app: 'masroofi-store-manager',
-    version: 1,
+    version: 2,
     exportedAt: Date.now(),
     data: {
       products,
@@ -82,6 +160,12 @@ export async function exportBackup(): Promise<BackupFile> {
       supplierPayments,
       settings: { ...DEFAULT_SETTINGS, ...((settings ?? { key: 'app' }) as Partial<Settings>) },
       meta,
+      manualSales,
+      categories,
+      priceHistory,
+      scannedInvoices,
+      invoiceImages,
+      audit,
     },
   };
 }
@@ -124,6 +208,23 @@ export async function importBackup(file: BackupFile, mode: 'replace' = 'replace'
     for (const p of d.customerPayments ?? []) await tx.objectStore('customerPayments').put(p);
     for (const p of d.supplierPayments ?? []) await tx.objectStore('supplierPayments').put(p);
     for (const m of d.meta ?? []) await tx.objectStore('meta').put(m);
+    for (const m of d.manualSales ?? []) await tx.objectStore('manualSales').put(m);
+    for (const c of d.categories ?? []) await tx.objectStore('categories').put(c);
+    for (const h of d.priceHistory ?? []) await tx.objectStore('priceHistory').put(h);
+    for (const i of d.scannedInvoices ?? []) await tx.objectStore('scannedInvoices').put(i);
+    for (const img of d.invoiceImages ?? []) {
+      await tx.objectStore('invoiceImages').put({
+        id: img.id,
+        blob: dataUrlToBlob(img.dataUrl),
+        mimeType: img.mimeType,
+        name: img.name,
+        size: img.size,
+        createdAt: img.createdAt,
+        width: img.width,
+        height: img.height,
+      } satisfies InvoiceImage);
+    }
+    for (const a of d.audit ?? []) await tx.objectStore('audit').put(a);
     if (d.settings) {
       const { key: _key, ...rest } = d.settings as Settings & { key?: string };
       await tx.objectStore('settings').put({ ...rest, key: 'app' } as never);

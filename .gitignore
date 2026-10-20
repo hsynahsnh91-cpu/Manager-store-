@@ -34,3 +34,7 @@ coverage/
 .env
 .env.local
 .env.*.local
+
+# أصول OCR المولّدة محليًا (تُنسخ عند npm install / build)
+public/ocr/
+.tmp-ocr/
