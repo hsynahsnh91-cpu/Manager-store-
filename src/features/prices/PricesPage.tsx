@@ -23,8 +23,9 @@ import { Input, Select } from '../../components/Form';
 import { ConfirmDialog, Modal } from '../../components/Modal';
 import { Badge, EmptyState, SkeletonRows } from '../../components/UI';
 import { formatDate } from '../../utils/dates';
-import { formatMoney, round2 } from '../../utils/money';
+import { formatMoney, formatUnitPrice, round2 } from '../../utils/money';
 import { normalizeArabic } from '../../utils/text';
+import { unitLabel } from '../../utils/units';
 import { downloadCSV } from '../../utils/csv';
 import { listProducts } from '../../services/products';
 import {
@@ -36,7 +37,7 @@ import {
 } from '../../services/categories';
 import { getPriceHistory, marginPercent, pricingSettings, setProductPrice, suggestSalePrice } from '../../services/prices';
 import { listScannedInvoices, invoicesForProduct } from '../../services/scannedInvoices';
-import { listSuppliers } from '../../services/suppliers';
+import { listProductSupplierPrices, listSuppliers, type SupplierPriceRow } from '../../services/suppliers';
 import { logAudit } from '../../services/audit';
 
 interface PriceEditor {
@@ -78,6 +79,7 @@ export function PricesPage() {
   const [saving, setSaving] = useState(false);
   const [historyProduct, setHistoryProduct] = useState<Product | null>(null);
   const [historyRows, setHistoryRows] = useState<PriceChange[]>([]);
+  const [supplierPrices, setSupplierPrices] = useState<SupplierPriceRow[]>([]);
 
   const [newCategory, setNewCategory] = useState('');
   const [editingCategory, setEditingCategory] = useState<ProductCategory | null>(null);
@@ -116,7 +118,7 @@ export function PricesPage() {
   const applySuggested = () => {
     if (!editor) return;
     const suggested = suggestSalePrice(round2(Number(editor.purchase)), {
-      marginPercent: pricing.margin,
+      marginPercent: editor.product.marginPercent ?? pricing.margin,
       roundTo: pricing.roundTo,
     });
     if (suggested !== null) setEditor({ ...editor, sale: String(suggested) });
@@ -165,7 +167,13 @@ export function PricesPage() {
 
   const openHistory = async (product: Product) => {
     setHistoryProduct(product);
-    setHistoryRows(await getPriceHistory(product.id));
+    setSupplierPrices([]);
+    const [rows, prices] = await Promise.all([
+      getPriceHistory(product.id),
+      listProductSupplierPrices(product.id),
+    ]);
+    setHistoryRows(rows);
+    setSupplierPrices(prices);
   };
 
   const addCategory = async () => {
@@ -325,7 +333,7 @@ export function PricesPage() {
                         <p className="font-bold text-slate-800 dark:text-slate-100">{product.name}</p>
                         <p className="text-[10px] text-slate-400">
                           {product.code || product.barcode || '—'}
-                          {product.unit && ` · ${product.unit}`}
+                          {(product.saleUnit || product.unit) && ` · ${unitLabel(product.saleUnit ?? product.unit ?? '')}`}
                           {' · '}{t('inStock')}: {product.quantity}
                         </p>
                         {supplierName(product.supplierId ?? product.lastSupplierId) && (
@@ -336,7 +344,10 @@ export function PricesPage() {
                       </td>
                       <td className="px-3 py-2 text-slate-500 dark:text-slate-400">{product.category || '—'}</td>
                       <td className="px-3 py-2">
-                        <p className="font-mono font-bold text-slate-800 dark:text-slate-100">{formatMoney(product.purchasePrice, settings.currency)}</p>
+                        <p className="font-mono font-bold text-slate-800 dark:text-slate-100">
+                          {formatUnitPrice(product.purchasePrice, settings.currency)}
+                          {product.saleUnit ? ` / ${unitLabel(product.saleUnit)}` : ''}
+                        </p>
                         {purchaseChange && (
                           <p className={`flex items-center gap-0.5 text-[10px] ${purchaseChange.newPrice > purchaseChange.oldPrice ? 'text-rose-600' : 'text-emerald-600'}`}>
                             {purchaseChange.newPrice > purchaseChange.oldPrice ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}
@@ -477,10 +488,15 @@ export function PricesPage() {
             />
             <div className="flex items-center justify-between rounded-lg border border-dashed border-slate-300 px-3 py-2 dark:border-slate-600">
               <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                <p className="font-semibold">{t('suggestedSale')} ({pricing.margin}%)</p>
+                <p className="font-semibold">
+                  {t('suggestedSale')} ({editor.product.marginPercent ?? pricing.margin}%)
+                </p>
                 <p className="font-mono text-slate-700 dark:text-slate-200">
                   {formatMoney(
-                    suggestSalePrice(round2(Number(editor.purchase)), { marginPercent: pricing.margin, roundTo: pricing.roundTo }) ?? 0,
+                    suggestSalePrice(round2(Number(editor.purchase)), {
+                      marginPercent: editor.product.marginPercent ?? pricing.margin,
+                      roundTo: pricing.roundTo,
+                    }) ?? 0,
                     settings.currency,
                   )}
                 </p>
@@ -515,6 +531,35 @@ export function PricesPage() {
               </div>
             </div>
 
+            <div className="flex flex-wrap gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+              <span>
+                {t('priceUnit')}: {unitLabel(historyProduct.saleUnit ?? historyProduct.unit ?? 'piece')}
+              </span>
+              <span>
+                {t('priceSource')}: {historyRows[0]?.sourceLabel || t('priceHistoryLabel')}
+              </span>
+            </div>
+
+            <div>
+              <p className="mb-1.5 text-xs font-bold text-slate-700 dark:text-slate-200">{t('lastPricePerSupplier')}</p>
+              {supplierPrices.length === 0 ? (
+                <p className="text-[11px] text-slate-400">{t('noData')}</p>
+              ) : (
+                <div className="space-y-1">
+                  {supplierPrices.map((row) => (
+                    <div key={row.id} className="flex items-center justify-between gap-2 rounded border border-slate-100 px-2 py-1.5 text-[11px] dark:border-slate-700">
+                      <span className="font-semibold text-slate-600 dark:text-slate-300">{row.supplierName || t('unknownSupplier')}</span>
+                      <span className="font-mono text-slate-500 dark:text-slate-400">
+                        {formatUnitPrice(row.unitCost, settings.currency)}
+                        {row.unit ? ` / ${unitLabel(row.unit)}` : ''}
+                        <span className="ms-2 text-[10px] text-slate-400">{formatDate(row.date, lang)}</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div>
               <p className="mb-1.5 text-xs font-bold text-slate-700 dark:text-slate-200">{t('changeHistory')}</p>
               {historyRows.length === 0 ? (
@@ -532,6 +577,9 @@ export function PricesPage() {
                       <span className={`flex items-center gap-1 font-mono ${row.newPrice > row.oldPrice ? 'text-rose-600' : row.newPrice < row.oldPrice ? 'text-emerald-600' : 'text-slate-400'}`}>
                         {row.newPrice > row.oldPrice ? <ArrowUpRight size={12} /> : row.newPrice < row.oldPrice ? <ArrowDownRight size={12} /> : <Minus size={12} />}
                         {formatMoney(row.oldPrice, settings.currency)} → {formatMoney(row.newPrice, settings.currency)}
+                        <span className="ms-1 text-[10px] text-slate-400">
+                          ({t('difference')}: {formatMoney(round2(row.newPrice - row.oldPrice), settings.currency)})
+                        </span>
                       </span>
                     </div>
                   ))}

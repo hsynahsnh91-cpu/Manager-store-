@@ -3,12 +3,13 @@ import { Building2, Eye, Pencil, Plus, Search, Wallet } from 'lucide-react';
 import type { Supplier } from '../../types';
 import {
   createSupplier,
+  getSupplierProfile,
   listSuppliersWithBalance,
   listSupplierPayments,
   updateSupplier,
+  type SupplierProfile,
 } from '../../services/suppliers';
 import { paySupplier } from '../../services/purchases';
-import { listPurchases } from '../../services/purchases';
 import { useAsync } from '../../hooks/useAsync';
 import { useApp } from '../../context/AppContext';
 import { useI18n } from '../../i18n';
@@ -17,22 +18,25 @@ import { Input, Select, Textarea } from '../../components/Form';
 import { Modal } from '../../components/Modal';
 import { Badge, EmptyState, SkeletonRows } from '../../components/UI';
 import { formatDate, formatDateTime } from '../../utils/dates';
-import { formatMoney, round2 } from '../../utils/money';
+import { formatMoney, formatUnitPrice, round2 } from '../../utils/money';
+import { unitLabel } from '../../utils/units';
 
 interface FormState {
   name: string;
   phone: string;
+  area: string;
   address: string;
+  supplies: string;
+  openingBalance: string;
   notes: string;
 }
 
-const empty: FormState = { name: '', phone: '', address: '', notes: '' };
+const empty: FormState = { name: '', phone: '', area: '', address: '', supplies: '', openingBalance: '0', notes: '' };
 
 export function SuppliersPage() {
   const { t, lang } = useI18n();
   const { settings, toast } = useApp();
   const { data, loading, reload } = useAsync(() => listSuppliersWithBalance(), []);
-  const { data: allPurchases } = useAsync(() => listPurchases(), []);
 
   const [search, setSearch] = useState('');
   const [formOpen, setFormOpen] = useState(false);
@@ -48,6 +52,7 @@ export function SuppliersPage() {
   const [payBusy, setPayBusy] = useState(false);
 
   const [statementFor, setStatementFor] = useState<Supplier | null>(null);
+  const [profile, setProfile] = useState<SupplierProfile | null>(null);
   const [paymentsFor, setPaymentsFor] = useState<Supplier | null>(null);
   const [supplierPayments, setSupplierPayments] = useState<Awaited<ReturnType<typeof listSupplierPayments>> | null>(null);
 
@@ -55,18 +60,10 @@ export function SuppliersPage() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return rows;
-    return rows.filter((s) => `${s.name} ${s.phone}`.toLowerCase().includes(q));
+    return rows.filter((s) => `${s.name} ${s.phone} ${s.area ?? ''} ${s.supplies ?? ''}`.toLowerCase().includes(q));
   }, [rows, search]);
 
   const totalDues = useMemo(() => rows.reduce((a, s) => a + s.balance, 0), [rows]);
-
-  const statementRows = useMemo(() => {
-    if (!statementFor || !allPurchases) return [];
-    const purchases = allPurchases
-      .filter((p) => p.supplierId === statementFor.id && p.status !== 'cancelled')
-      .sort((a, b) => a.date - b.date);
-    return purchases;
-  }, [statementFor, allPurchases]);
 
   const openAdd = () => {
     setEditing(null);
@@ -77,7 +74,15 @@ export function SuppliersPage() {
 
   const openEdit = (s: Supplier) => {
     setEditing(s);
-    setForm({ name: s.name, phone: s.phone, address: s.address, notes: s.notes });
+    setForm({
+      name: s.name,
+      phone: s.phone,
+      area: s.area ?? '',
+      address: s.address,
+      supplies: s.supplies ?? '',
+      openingBalance: String(s.openingBalance ?? 0),
+      notes: s.notes,
+    });
     setErrors({});
     setFormOpen(true);
   };
@@ -92,7 +97,10 @@ export function SuppliersPage() {
       const payload = {
         name: form.name.trim(),
         phone: form.phone.trim(),
+        area: form.area.trim(),
         address: form.address.trim(),
+        supplies: form.supplies.trim(),
+        openingBalance: round2(Number(form.openingBalance) || 0),
         notes: form.notes.trim(),
       };
       if (editing) await updateSupplier(editing.id, payload);
@@ -127,6 +135,13 @@ export function SuppliersPage() {
     } finally {
       setPayBusy(false);
     }
+  };
+
+  const openProfile = async (s: Supplier) => {
+    setStatementFor(s);
+    setProfile(null);
+    const data = await getSupplierProfile(s.id);
+    setProfile(data);
   };
 
   const openPayments = async (s: Supplier) => {
@@ -175,7 +190,8 @@ export function SuppliersPage() {
                 <tr>
                   <th>{t('supplierName')}</th>
                   <th>{t('phone')}</th>
-                  <th className="th-numeric">{t('purchasesTitle')}</th>
+                  <th>{t('lastPurchasePrice')}</th>
+                  <th className="th-numeric">{t('unpaidInvoices')}</th>
                   <th className="th-numeric">{t('dues')}</th>
                   <th className="text-end">{t('actions')}</th>
                 </tr>
@@ -185,12 +201,18 @@ export function SuppliersPage() {
                   <tr key={s.id}>
                     <td>
                       <div className="font-bold text-slate-800 dark:text-slate-100">{s.name}</div>
-                      {s.address && <div className="text-[11px] text-slate-400">{s.address}</div>}
+                      {(s.area || s.address) && (
+                        <div className="text-[11px] text-slate-400">{s.area}{s.area && s.address ? ' · ' : ''}{s.address}</div>
+                      )}
+                      {s.supplies && <div className="text-[10px] text-slate-400">{s.supplies}</div>}
                     </td>
                     <td className="text-xs" dir="ltr">
                       {s.phone || '—'}
                     </td>
-                    <td className="td-numeric text-slate-500">{s.purchaseCount}</td>
+                    <td className="text-xs text-slate-500">
+                      {s.lastPurchaseAt ? formatDate(s.lastPurchaseAt, lang) : '—'}
+                    </td>
+                    <td className="td-numeric text-slate-500">{s.unpaidCount}</td>
                     <td className="td-numeric">
                       {s.balance > 0 ? (
                         <span className="font-bold text-rose-600">{formatMoney(s.balance, settings.currency)}</span>
@@ -209,9 +231,9 @@ export function SuppliersPage() {
                           <Wallet size={15} />
                         </button>
                         <button
-                          onClick={() => setStatementFor(s)}
+                          onClick={() => void openProfile(s)}
                           className="rounded-lg p-1.5 text-slate-400 hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-slate-800"
-                          title={t('supplierStatement')}
+                          title={t('supplierProfile')}
                         >
                           <Eye size={15} />
                         </button>
@@ -258,7 +280,17 @@ export function SuppliersPage() {
             className="sm:col-span-2"
           />
           <Input label={t('phone')} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} dir="ltr" />
-          <Input label={t('address')} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+          <Input label={t('area')} value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value })} />
+          <Input label={t('suppliedProducts')} value={form.supplies} onChange={(e) => setForm({ ...form, supplies: e.target.value })} />
+          <Input
+            label={t('openingBalance')}
+            type="number"
+            min="0"
+            step="0.01"
+            value={form.openingBalance}
+            onChange={(e) => setForm({ ...form, openingBalance: e.target.value })}
+          />
+          <Input label={t('address')} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className="sm:col-span-2" />
           <Textarea label={t('notes')} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="sm:col-span-2" />
         </div>
       </Modal>
@@ -304,66 +336,123 @@ export function SuppliersPage() {
         )}
       </Modal>
 
-      {/* كشف حساب المورد */}
+      {/* حساب المورد: فواتير غير مسددة، دفعات حديثة، آخر الأسعار */}
       <Modal
         open={!!statementFor}
-        onClose={() => setStatementFor(null)}
-        title={`${t('supplierStatement')} — ${statementFor?.name ?? ''}`}
-        size="lg"
+        onClose={() => { setStatementFor(null); setProfile(null); }}
+        title={`${t('supplierProfile')} — ${statementFor?.name ?? ''}`}
+        size="xl"
         footer={
           <>
-            <Button variant="secondary" onClick={() => statementFor && void openPayments(statementFor)}>
-              {t('paymentsHistory')}
+            <Button variant="secondary" icon={<Wallet size={15} />} onClick={() => statementFor && void openPayments(statementFor)}>
+              {t('recentPayments')}
             </Button>
-            <Button onClick={() => setStatementFor(null)}>{t('close')}</Button>
+            <Button
+              variant="success"
+              disabled={!profile || profile.balance <= 0}
+              onClick={() => {
+                if (!statementFor) return;
+                setPayTarget({ id: statementFor.id, name: statementFor.name, balance: profile?.balance ?? 0 });
+                setProfile(null);
+                setStatementFor(null);
+              }}
+            >
+              {t('paySupplier')}
+            </Button>
+            <Button onClick={() => { setStatementFor(null); setProfile(null); }}>{t('close')}</Button>
           </>
         }
       >
-        {statementRows.length === 0 ? (
-          <EmptyState icon={<Building2 size={24} />} title={t('noData')} hint={t('emptyHint')} />
+        {profile === null ? (
+          <SkeletonRows rows={5} cols={4} />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="table-base">
-              <thead>
-                <tr>
-                  <th>{t('purchaseNumber')}</th>
-                  <th>{t('date')}</th>
-                  <th className="th-numeric">{t('total')}</th>
-                  <th className="th-numeric">{t('paid')}</th>
-                  <th className="th-numeric">{t('remaining')}</th>
-                  <th>{t('status')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {statementRows.map((p) => (
-                  <tr key={p.id}>
-                    <td className="font-bold" dir="ltr">
-                      {p.number}
-                    </td>
-                    <td className="text-xs text-slate-500">{formatDate(p.date, lang)}</td>
-                    <td className="td-numeric">{formatMoney(p.total)}</td>
-                    <td className="td-numeric text-emerald-600">{formatMoney(p.paid)}</td>
-                    <td className="td-numeric font-bold text-rose-500">{formatMoney(p.remaining)}</td>
-                    <td>
-                      {p.status === 'received' ? (
-                        <Badge tone="green">{t('received')}</Badge>
-                      ) : p.status === 'ordered' ? (
-                        <Badge tone="amber">{t('ordered')}</Badge>
-                      ) : (
-                        <Badge tone="rose">{t('statusCancelled')}</Badge>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <p className="mt-3 rounded-lg bg-slate-50 p-3 text-xs font-bold dark:bg-slate-800/60">
-              {t('dues')}:{' '}
-              {formatMoney(
-                (data ?? []).find((s) => s.id === statementFor?.id)?.balance ?? 0,
-                settings.currency,
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+              <div className="rounded-lg bg-rose-50 px-3 py-2 dark:bg-rose-950/40">
+                <p className="text-[10px] text-rose-500">{t('amountOwed')}</p>
+                <p className="font-mono font-bold text-rose-600 dark:text-rose-400">{formatMoney(profile.balance, settings.currency)}</p>
+              </div>
+              <div className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800">
+                <p className="text-[10px] text-slate-400">{t('openingBalance')}</p>
+                <p className="font-mono font-bold text-slate-700 dark:text-slate-200">{formatMoney(profile.supplier?.openingBalance ?? 0, settings.currency)}</p>
+              </div>
+              <div className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800">
+                <p className="text-[10px] text-slate-400">{t('purchasesTitle')}</p>
+                <p className="font-bold text-slate-700 dark:text-slate-200">{profile.purchases.length}</p>
+              </div>
+              <div className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800">
+                <p className="text-[10px] text-slate-400">{t('unpaidInvoices')}</p>
+                <p className="font-bold text-slate-700 dark:text-slate-200">{profile.unpaid.length}</p>
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-1.5 text-xs font-bold text-slate-700 dark:text-slate-200">{t('unpaidInvoices')}</p>
+              {profile.unpaid.length === 0 ? (
+                <p className="text-[11px] text-slate-400">{t('noData')}</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="table-base">
+                    <thead>
+                      <tr>
+                        <th>{t('purchaseNumber')}</th>
+                        <th>{t('date')}</th>
+                        <th className="th-numeric">{t('total')}</th>
+                        <th className="th-numeric">{t('paid')}</th>
+                        <th className="th-numeric">{t('remaining')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {profile.unpaid.map((p) => (
+                        <tr key={p.id}>
+                          <td className="font-bold" dir="ltr">{p.number}</td>
+                          <td className="text-xs text-slate-500">{formatDate(p.date, lang)}</td>
+                          <td className="td-numeric">{formatMoney(p.total, settings.currency)}</td>
+                          <td className="td-numeric text-emerald-600">{formatMoney(p.paid, settings.currency)}</td>
+                          <td className="td-numeric font-bold text-rose-500">{formatMoney(p.remaining, settings.currency)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
-            </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <div>
+                <p className="mb-1.5 text-xs font-bold text-slate-700 dark:text-slate-200">{t('lastPricePerSupplier')}</p>
+                {profile.prices.length === 0 ? (
+                  <p className="text-[11px] text-slate-400">{t('noData')}</p>
+                ) : (
+                  <ul className="max-h-52 space-y-1 overflow-y-auto">
+                    {profile.prices.map((row) => (
+                      <li key={row.id} className="flex items-center justify-between gap-2 rounded border border-slate-100 px-2 py-1 text-[11px] dark:border-slate-700">
+                        <span className="truncate font-semibold text-slate-600 dark:text-slate-300">{row.productName}</span>
+                        <span className="shrink-0 font-mono text-slate-500 dark:text-slate-400">
+                          {formatUnitPrice(row.unitCost, settings.currency)}
+                          {row.unit ? ` / ${unitLabel(row.unit)}` : ''}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <p className="mb-1.5 text-xs font-bold text-slate-700 dark:text-slate-200">{t('recentPayments')}</p>
+                {profile.payments.length === 0 ? (
+                  <p className="text-[11px] text-slate-400">{t('noData')}</p>
+                ) : (
+                  <ul className="max-h-52 space-y-1 overflow-y-auto">
+                    {profile.payments.slice(0, 12).map((pay) => (
+                      <li key={pay.id} className="flex items-center justify-between gap-2 rounded border border-slate-100 px-2 py-1 text-[11px] dark:border-slate-700">
+                        <span className="text-slate-500 dark:text-slate-400">{formatDateTime(pay.date, lang)}</span>
+                        <span className="font-mono font-bold text-emerald-600">{formatMoney(pay.amount, settings.currency)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </Modal>

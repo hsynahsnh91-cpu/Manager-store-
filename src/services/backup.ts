@@ -18,8 +18,10 @@ import type {
   Purchase,
   ScannedInvoice,
   Settings,
+  StockWriteOff,
   Supplier,
   SupplierPayment,
+  SupplierPrice,
 } from '../types';
 
 export interface BackupFile {
@@ -45,6 +47,9 @@ export interface BackupFile {
     scannedInvoices?: ScannedInvoice[];
     invoiceImages?: { id: string; mimeType: string; name: string; size: number; createdAt: number; width: number; height: number; dataUrl: string }[];
     audit?: AuditEntry[];
+    // الإصدار 3 — اختيارية أيضًا للحفاظ على توافق النسخ القديمة
+    stockWriteOffs?: StockWriteOff[];
+    supplierPrices?: SupplierPrice[];
   };
 }
 
@@ -66,6 +71,8 @@ const STORES = [
   'scannedInvoices',
   'invoiceImages',
   'audit',
+  'stockWriteOffs',
+  'supplierPrices',
 ] as const;
 
 /** Blob → data URL (لحفظ صور الفواتير في ملف النسخة الاحتياطية) */
@@ -110,6 +117,8 @@ export async function exportBackup(): Promise<BackupFile> {
     scannedInvoices,
     images,
     audit,
+    stockWriteOffs,
+    supplierPrices,
   ] =
     await Promise.all([
       db.getAll('products'),
@@ -129,6 +138,8 @@ export async function exportBackup(): Promise<BackupFile> {
       db.getAll('scannedInvoices'),
       db.getAll('invoiceImages'),
       db.getAll('audit'),
+      db.getAll('stockWriteOffs'),
+      db.getAll('supplierPrices'),
     ]);
 
   const invoiceImages = await Promise.all(
@@ -146,7 +157,7 @@ export async function exportBackup(): Promise<BackupFile> {
 
   return {
     app: 'masroofi-store-manager',
-    version: 2,
+    version: 3,
     exportedAt: Date.now(),
     data: {
       products,
@@ -166,6 +177,8 @@ export async function exportBackup(): Promise<BackupFile> {
       scannedInvoices,
       invoiceImages,
       audit,
+      stockWriteOffs,
+      supplierPrices,
     },
   };
 }
@@ -225,6 +238,8 @@ export async function importBackup(file: BackupFile, mode: 'replace' = 'replace'
       } satisfies InvoiceImage);
     }
     for (const a of d.audit ?? []) await tx.objectStore('audit').put(a);
+    for (const w of d.stockWriteOffs ?? []) await tx.objectStore('stockWriteOffs').put(w);
+    for (const p of d.supplierPrices ?? []) await tx.objectStore('supplierPrices').put(p);
     if (d.settings) {
       const { key: _key, ...rest } = d.settings as Settings & { key?: string };
       await tx.objectStore('settings').put({ ...rest, key: 'app' } as never);

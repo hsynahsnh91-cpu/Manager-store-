@@ -8,7 +8,7 @@
 import type { PriceChange, PriceField, PriceSourceType, Product, Settings } from '../types';
 import { getAll, getDB } from './db';
 import { uid } from '../utils/id';
-import { round2 } from '../utils/money';
+import { round2, round4 } from '../utils/money';
 import { DEFAULT_SETTINGS } from './settings';
 
 export const DEFAULT_MARGIN = 25;
@@ -62,7 +62,7 @@ export function classifyPriceChange(
   newPrice: number,
 ): ProposedPriceChange {
   const oldPrice = product.purchasePrice;
-  const next = round2(newPrice);
+  const next = round4(newPrice);
   if (!Number.isFinite(next) || next <= 0) {
     return { productId: product.id, productName: product.name, field: 'purchase', oldPrice, newPrice: oldPrice, changed: false, reason: 'invalid' };
   }
@@ -107,7 +107,7 @@ export interface RecordPriceInput {
 /** يسجّل تغيّر سعر واحد — لا يُنشئ قيدًا إذا لم يتغيّر السعر */
 export async function recordPriceChange(input: RecordPriceInput): Promise<PriceChange | null> {
   const current = input.field === 'purchase' ? input.product.purchasePrice : input.product.salePrice;
-  const next = round2(input.newPrice);
+  const next = input.field === 'purchase' ? round4(input.newPrice) : round2(input.newPrice);
   if (!(next > 0) || next === current) return null;
   const entry: PriceChange = {
     id: uid('prc'),
@@ -144,7 +144,7 @@ export async function setProductPrice(
     await tx.done;
     throw new Error('PRODUCT_NOT_FOUND');
   }
-  const next = round2(newPrice);
+  const next = field === 'purchase' ? round4(newPrice) : round2(newPrice);
   if (!(next > 0)) {
     await tx.done;
     throw new Error('INVALID_PRICE');

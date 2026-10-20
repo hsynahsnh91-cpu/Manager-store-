@@ -11,6 +11,9 @@ import {
   Palette,
   Tags,
   Sparkles,
+  Plus,
+  X,
+  Search,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useI18n } from '../../i18n';
@@ -25,6 +28,9 @@ export function SettingsPage() {
   const { settings, updateSettings, toast } = useApp();
   const [form, setForm] = useState<Settings>({ ...settings });
   const [saving, setSaving] = useState(false);
+  const [newExpense, setNewExpense] = useState('');
+  const [synFrom, setSynFrom] = useState('');
+  const [synTo, setSynTo] = useState('');
   const [confirm, setConfirm] = useState<{ title: string; message: string; action: () => Promise<void> } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -86,6 +92,31 @@ export function SettingsPage() {
           <Input label={t('storeAddress')} value={form.storeAddress} onChange={(e) => setForm({ ...form, storeAddress: e.target.value })} className="sm:col-span-2" />
           <Input label={t('currency')} value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })} />
           <Input label={t('defaultAlert')} type="number" min="0" value={form.lowStockDefault} onChange={(e) => setForm({ ...form, lowStockDefault: Number(e.target.value) })} />
+          <Select
+            label={t('storeType')}
+            value={form.storeType ?? 'grocery'}
+            onChange={(e) => setForm({ ...form, storeType: e.target.value as Settings['storeType'] })}
+          >
+            <option value="grocery">{t('storeTypeGrocery')}</option>
+            <option value="mini_market">{t('storeTypeMini')}</option>
+            <option value="supermarket">{t('storeTypeSuper')}</option>
+            <option value="butcher">{t('storeTypeButcher')}</option>
+            <option value="other">{t('other')}</option>
+          </Select>
+          <Input
+            label={t('debtLedgerTitle')}
+            value={form.debtLedgerTitle ?? ''}
+            onChange={(e) => setForm({ ...form, debtLedgerTitle: e.target.value })}
+          />
+          <Input
+            label={t('expiryAlerts')}
+            type="number"
+            min="0"
+            step="1"
+            value={form.expiryAlertDays ?? 30}
+            onChange={(e) => setForm({ ...form, expiryAlertDays: Number(e.target.value) })}
+            hint={`${t('daysLeft')} — ${t('days')}`}
+          />
         </div>
       </section>
 
@@ -150,11 +181,110 @@ export function SettingsPage() {
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Input label={t('invoicePrefixLabel')} value={form.invoicePrefix} onChange={(e) => setForm({ ...form, invoicePrefix: e.target.value })} dir="ltr" />
           <Input label={t('purchasePrefixLabel')} value={form.purchasePrefix} onChange={(e) => setForm({ ...form, purchasePrefix: e.target.value })} dir="ltr" />
-          <Input
-            label={t('expenseCategoriesLabel')}
-            value={form.expenseCategories.join(', ')}
-            onChange={(e) => setForm({ ...form, expenseCategories: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
-          />
+        </div>
+
+        <div className="mt-4">
+          <p className="mb-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">{t('expenseCategories')}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {form.expenseCategories.map((cat) => (
+              <span
+                key={cat}
+                className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+              >
+                {cat}
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, expenseCategories: form.expenseCategories.filter((c) => c !== cat) })}
+                  className="rounded-full p-0.5 text-slate-400 hover:text-rose-600"
+                  aria-label={t('delete')}
+                >
+                  <X size={11} />
+                </button>
+              </span>
+            ))}
+            {form.expenseCategories.length === 0 && <span className="text-[11px] text-slate-400">{t('noData')}</span>}
+          </div>
+          <div className="mt-2 flex gap-2">
+            <Input
+              value={newExpense}
+              onChange={(e) => setNewExpense(e.target.value)}
+              placeholder={t('addExpenseCategory')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  const name = newExpense.trim();
+                  if (name && !form.expenseCategories.includes(name)) {
+                    setForm({ ...form, expenseCategories: [...form.expenseCategories, name] });
+                    setNewExpense('');
+                  }
+                }
+              }}
+            />
+            <Button
+              variant="secondary"
+              icon={<Plus size={14} />}
+              onClick={() => {
+                const name = newExpense.trim();
+                if (name && !form.expenseCategories.includes(name)) {
+                  setForm({ ...form, expenseCategories: [...form.expenseCategories, name] });
+                  setNewExpense('');
+                }
+              }}
+            >
+              {t('add')}
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      {/* مرادفات البحث */}
+      <section className="card p-5">
+        <h2 className="mb-1 flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+          <Search size={16} className="text-brand-600" /> {t('customSynonyms')}
+        </h2>
+        <p className="mb-3 text-[11px] text-slate-400">{t('customSynonymsHint')}</p>
+        <div className="space-y-1.5">
+          {(form.searchSynonyms ?? []).map((syn, idx) => (
+            <div key={`${syn.from}-${idx}`} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] dark:border-slate-700">
+              <span className="font-semibold text-slate-600 dark:text-slate-300">
+                {syn.from} ← {syn.to.join('، ')}
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setForm({ ...form, searchSynonyms: (form.searchSynonyms ?? []).filter((_, i) => i !== idx) })
+                }
+                className="rounded p-1 text-slate-400 hover:text-rose-600"
+                aria-label={t('delete')}
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
+            <Input value={synFrom} onChange={(e) => setSynFrom(e.target.value)} placeholder={t('shortName')} />
+            <Input value={synTo} onChange={(e) => setSynTo(e.target.value)} placeholder={t('alternateNames')} />
+            <Button
+              variant="secondary"
+              icon={<Plus size={14} />}
+              onClick={() => {
+                const from = synFrom.trim();
+                const to = synTo
+                  .split(/[,،]/)
+                  .map((x) => x.trim())
+                  .filter(Boolean);
+                if (!from || to.length === 0) return;
+                setForm({
+                  ...form,
+                  searchSynonyms: [...(form.searchSynonyms ?? []).filter((s) => s.from !== from), { from, to }],
+                });
+                setSynFrom('');
+                setSynTo('');
+              }}
+            >
+              {t('add')}
+            </Button>
+          </div>
         </div>
       </section>
 

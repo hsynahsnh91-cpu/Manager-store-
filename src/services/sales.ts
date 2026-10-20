@@ -8,12 +8,17 @@
 import type { CashTransaction, Invoice, InvoiceItem, Product } from '../types';
 import { getAll, getDB } from './db';
 import { uid } from '../utils/id';
-import { mulMoney, round2, subMoney, sumMoney } from '../utils/money';
+import { mulCost, mulMoney, round2, subMoney, sumMoney } from '../utils/money';
 
 export interface SaleLine {
+  /** معرّف المنتج — أو فارغ مع customName لبيع سريع غير مخزني */
   productId: string;
-  quantity: number;
+  quantity: number; // بوحدة البيع (تقبل الكسور للوزن)
   unitPrice?: number; // إن لم يُمرَّر يُستخدم سعر المنتج الحالي
+  /** بيع سريع لصنف غير موجود في الدليل — لا يخصم مخزونًا */
+  customName?: string;
+  customUnit?: string;
+  customCost?: number;
 }
 
 export interface CreateSaleInput {
@@ -92,6 +97,25 @@ export async function createSale(
     const items: InvoiceItem[] = [];
     const productsToUpdate: Product[] = [];
     for (const line of input.lines) {
+      // بيع سريع: لا منتج ولا خصم مخزون — يُسجَّل الاسم والسعر في الفاتورة فقط
+      if (line.customName) {
+        const name = line.customName.trim();
+        if (!name) throw new SaleError('PRODUCT_NOT_FOUND');
+        if (!(line.quantity > 0)) throw new SaleError('INVALID_AMOUNT', name);
+        const unitPrice = line.unitPrice ?? 0;
+        items.push({
+          productId: `custom:${name.toLowerCase()}`,
+          name,
+          code: '',
+          quantity: line.quantity,
+          unitPrice,
+          unitCost: Math.max(0, line.customCost ?? 0),
+          lineTotal: mulMoney(line.quantity, unitPrice),
+          unit: line.customUnit ?? '',
+        });
+        continue;
+      }
+
       const product = await productStore.get(line.productId);
       if (!product) throw new SaleError('PRODUCT_NOT_FOUND', line.productId);
       if (line.quantity <= 0) throw new SaleError('INVALID_AMOUNT', product.name);
@@ -107,6 +131,7 @@ export async function createSale(
         unitPrice,
         unitCost: product.purchasePrice, // لقطة التكلفة التاريخية
         lineTotal: mulMoney(line.quantity, unitPrice),
+        unit: product.saleUnit ?? product.unit ?? '',
       });
       productsToUpdate.push(product);
     }
@@ -117,7 +142,7 @@ export async function createSale(
     const total = subMoney(subtotal, discount);
     const paid = Math.max(0, Math.min(round2(input.paid), total));
     const remaining = subMoney(total, paid);
-    const cogs = sumMoney(items.map((i) => mulMoney(i.quantity, i.unitCost)));
+    const cogs = sumMoney(items.map((i) => mulCost(i.quantity, i.unitCost)));
     const status: Invoice['status'] =
       remaining <= 0 ? 'paid' : paid > 0 ? 'partial' : 'unpaid';
 

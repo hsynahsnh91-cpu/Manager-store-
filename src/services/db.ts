@@ -18,8 +18,10 @@ import type {
   Purchase,
   ScannedInvoice,
   Settings,
+  StockWriteOff,
   Supplier,
   SupplierPayment,
+  SupplierPrice,
 } from '../types';
 
 interface StoreDB extends DBSchema {
@@ -30,8 +32,16 @@ interface StoreDB extends DBSchema {
   purchases: { key: string; value: Purchase; indexes: { 'by-date': number; 'by-supplier': string; 'by-status': string; 'by-token': string } };
   expenses: { key: string; value: Expense; indexes: { 'by-date': number } };
   cash: { key: string; value: CashTransaction; indexes: { 'by-date': number; 'by-ref': string } };
-  customerPayments: { key: string; value: CustomerPayment; indexes: { 'by-date': number; 'by-customer': string } };
-  supplierPayments: { key: string; value: SupplierPayment; indexes: { 'by-date': number; 'by-supplier': string } };
+  customerPayments: {
+    key: string;
+    value: CustomerPayment;
+    indexes: { 'by-date': number; 'by-customer': string; 'by-token': string };
+  };
+  supplierPayments: {
+    key: string;
+    value: SupplierPayment;
+    indexes: { 'by-date': number; 'by-supplier': string; 'by-token': string };
+  };
   settings: { key: string; value: Settings };
   meta: { key: string; value: { key: string; value: unknown } };
   // ——— الإصدار 2: سجل المبيعات، التصنيفات، الأسعار، الفواتير الممسوحة ———
@@ -53,17 +63,24 @@ interface StoreDB extends DBSchema {
   };
   invoiceImages: { key: string; value: InvoiceImage };
   audit: { key: string; value: AuditEntry; indexes: { 'by-at': number } };
+  // ——— الإصدار 3: الإتلاف وتاريخ أسعار الموردين ———
+  stockWriteOffs: { key: string; value: StockWriteOff; indexes: { 'by-date': number; 'by-product': string } };
+  supplierPrices: {
+    key: string;
+    value: SupplierPrice;
+    indexes: { 'by-supplier': string; 'by-product': string; 'by-date': number };
+  };
 }
 
 export const DB_NAME = 'masroofi-store-manager';
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 
 let dbPromise: Promise<IDBPDatabase<StoreDB>> | null = null;
 
 export function getDB(): Promise<IDBPDatabase<StoreDB>> {
   if (!dbPromise) {
     dbPromise = openDB<StoreDB>(DB_NAME, DB_VERSION, {
-      upgrade(db) {
+      upgrade(db, oldVersion, _newVersion, tx) {
         // المنتجات
         if (!db.objectStoreNames.contains('products')) {
           const s = db.createObjectStore('products', { keyPath: 'id' });
@@ -159,6 +176,32 @@ export function getDB(): Promise<IDBPDatabase<StoreDB>> {
         if (!db.objectStoreNames.contains('audit')) {
           const s = db.createObjectStore('audit', { keyPath: 'id' });
           s.createIndex('by-at', 'at');
+        }
+
+        // ————— الإصدار 3 — إضافة فقط: الإتلاف وأسعار الموردين وفهارس منع التكرار —————
+        if (!db.objectStoreNames.contains('stockWriteOffs')) {
+          const s = db.createObjectStore('stockWriteOffs', { keyPath: 'id' });
+          s.createIndex('by-date', 'date');
+          s.createIndex('by-product', 'productId');
+        }
+        if (!db.objectStoreNames.contains('supplierPrices')) {
+          const s = db.createObjectStore('supplierPrices', { keyPath: 'id' });
+          s.createIndex('by-supplier', 'supplierId');
+          s.createIndex('by-product', 'productId');
+          s.createIndex('by-date', 'date');
+        }
+        // فهارس منع تكرار الدفعات — تُضاف للسجلات القديمة دون حذفها.
+        // السجلات القديمة بلا clientToken لا تدخل الفهرس، فلا تعارض.
+        if (oldVersion < 3) {
+          for (const [storeName, indexName] of [
+            ['customerPayments', 'by-token'],
+            ['supplierPayments', 'by-token'],
+          ] as const) {
+            const store = tx.objectStore(storeName);
+            if (!store.indexNames.contains(indexName)) {
+              store.createIndex(indexName, 'clientToken');
+            }
+          }
         }
       },
     });

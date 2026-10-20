@@ -24,7 +24,8 @@ export class ManualSaleError extends Error {
       | 'INVALID_PRICE'
       | 'PRODUCT_NOT_FOUND'
       | 'INSUFFICIENT_STOCK'
-      | 'NOT_FOUND',
+      | 'NOT_FOUND'
+      | 'HAS_PAYMENTS',
     public detail?: string,
   ) {
     super(code);
@@ -39,6 +40,8 @@ export interface CreateManualSaleInput {
   unitPrice: number;
   unitCost?: number | null;
   buyerName?: string;
+  /** الزبون المرتبط — مطلوب عمليًا للبيع الآجل كي يظهر في دفتر الدين */
+  customerId?: string | null;
   category?: string;
   note?: string;
   date?: number;
@@ -46,6 +49,7 @@ export interface CreateManualSaleInput {
   stockApplied?: boolean;
   paid?: number;
   paymentMethod?: PaymentMethod | 'credit';
+  unit?: string;
   clientToken: string;
   /** إنشاء منتج جديد تلقائيًا مع البيع (بدل إجبار المستخدم على إنشاء منتج كامل أولًا) */
   createProduct?: {
@@ -174,11 +178,14 @@ export async function createManualSale(
       total,
       unitCost: unitCost !== null && Number.isFinite(unitCost) ? round2(unitCost) : null,
       buyerName: input.buyerName?.trim() ?? '',
+      customerId: input.customerId || null,
+      unit: input.unit || product?.saleUnit || product?.unit || '',
       category: (input.category ?? product?.category ?? '').trim(),
       note: input.note?.trim() ?? '',
       source: input.source ?? 'manual',
       stockApplied,
       paid,
+      initialPaid: paid,
       paymentMethod,
       clientToken: input.clientToken,
       createdAt: now,
@@ -236,6 +243,8 @@ export interface UpdateManualSaleInput {
   unitPrice?: number;
   unitCost?: number | null;
   buyerName?: string;
+  customerId?: string | null;
+  unit?: string;
   category?: string;
   note?: string;
   date?: number;
@@ -348,11 +357,14 @@ export async function updateManualSale(
       total,
       unitCost,
       buyerName: (patch.buyerName ?? current.buyerName).trim(),
+      customerId: patch.customerId !== undefined ? patch.customerId || null : current.customerId ?? null,
+      unit: patch.unit !== undefined ? patch.unit : current.unit,
       category: (patch.category ?? current.category).trim(),
       note: (patch.note ?? current.note).trim(),
       date,
       stockApplied,
       paid,
+      initialPaid: current.initialPaid ?? current.paid,
       paymentMethod,
       updatedAt: Date.now(),
     };
@@ -385,12 +397,17 @@ export async function updateManualSale(
 /** حذف سجل مع إرجاع المخزون وإزالة حركته في الصندوق — والسجل يبقى في سجل المراجعة */
 export async function deleteManualSale(id: string): Promise<void> {
   const db = await getDB();
-  const tx = db.transaction(['manualSales', 'products', 'cash'], 'readwrite');
+  const tx = db.transaction(['manualSales', 'products', 'cash', 'customerPayments'], 'readwrite');
   try {
     const sale = await tx.objectStore('manualSales').get(id);
     if (!sale) {
       await tx.done;
       return;
+    }
+    // لا نحذف سجلًا سُدِّدت منه دفعات — يبقى الأثر المالي في دفتر الدين
+    const payments = await tx.objectStore('customerPayments').getAll();
+    if (payments.some((p) => (p.manualSaleIds ?? []).includes(id))) {
+      throw new ManualSaleError('HAS_PAYMENTS', sale.number);
     }
     if (sale.stockApplied && sale.productId) {
       const product = await tx.objectStore('products').get(sale.productId);

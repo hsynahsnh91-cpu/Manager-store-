@@ -200,8 +200,8 @@ describe('مطابقة المنتجات والتصنيفات', () => {
 
   it('يقترح التصنيف المناسب ويطلب تدخلًا عند الغموض', async () => {
     const cats = await ensureCategories();
-    expect(suggestCategory('حليب المراعي 1 لتر', cats).category).toBe('المواد الغذائية');
-    expect(suggestCategory('صابون ديتول', cats).category).toBe('المنظفات');
+    expect(suggestCategory('حليب المراعي 1 لتر', cats).category).toBe('الألبان والأجبان واللبنة والبيض');
+    expect(suggestCategory('صابون ديتول', cats).category).toBe('الصابون والشامبو والعناية الشخصية');
     expect(suggestCategory('قطعة معدنية غير معروفة', cats).category).toBeNull();
   });
 

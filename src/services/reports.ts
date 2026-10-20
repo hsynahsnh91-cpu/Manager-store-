@@ -15,10 +15,12 @@ import type {
   ManualSale,
   Purchase,
   Product,
+  StockWriteOff,
+  Supplier,
   SupplierPayment,
 } from '../types';
 import { getAll } from './db';
-import { addMoney, mulMoney, subMoney, sumMoney, round2 } from '../utils/money';
+import { addMoney, mulCost, subMoney, sumMoney, round2 } from '../utils/money';
 import { endOfDay, startOfDay } from '../utils/dates';
 
 export interface DateRange {
@@ -49,6 +51,8 @@ export interface PnlReport {
   cancelledTotal: number;
   manualCount: number; // عدد السجلات اليدوية المحتسبة (لا تُنشئ فواتير فلا ازدواج)
   manualSales: number; // مبيعات يدوية ضمن الفترة
+  /** قيمة الإتلاف/التلف بالتكلفة — خسارة غير نقدية منفصلة */
+  writeOffs: number;
 }
 
 export interface DashboardData {
@@ -60,6 +64,8 @@ export interface DashboardData {
   inventoryRetailValue: number;
   customerDebts: number;
   supplierDues: number;
+  writeOffs: number;
+  expiryAlerts: { product: Product; status: 'expired' | 'expiring'; daysLeft: number }[];
   lowStock: Product[];
   recentInvoices: Invoice[];
   topProducts: { productId: string; name: string; quantity: number; revenue: number }[];
@@ -67,7 +73,7 @@ export interface DashboardData {
 }
 
 async function loadAll() {
-  const [invoices, purchases, expenses, payments, supplierPayments, products, cash, manualSales] =
+  const [invoices, purchases, expenses, payments, supplierPayments, products, cash, manualSales, writeOffs, customers, suppliers] =
     await Promise.all([
       getAll<Invoice>('invoices'),
       getAll<Purchase>('purchases'),
@@ -77,13 +83,28 @@ async function loadAll() {
       getAll<Product>('products'),
       getAll<CashTransaction>('cash'),
       getAll<ManualSale>('manualSales'),
+      getAll<StockWriteOff>('stockWriteOffs'),
+      getAll<{ openingBalance?: number }>('customers'),
+      getAll<Supplier>('suppliers'),
     ]);
-  return { invoices, purchases, expenses, payments, supplierPayments, products, cash, manualSales };
+  return {
+    invoices,
+    purchases,
+    expenses,
+    payments,
+    supplierPayments,
+    products,
+    cash,
+    manualSales,
+    writeOffs,
+    customers,
+    suppliers,
+  };
 }
 
 /** تكلفة البضاعة لسجل يدوي (صفر إذا كانت التكلفة غير معروفة) */
 export function manualSaleCogs(sale: ManualSale): number {
-  return sale.unitCost === null ? 0 : mulMoney(sale.quantity, sale.unitCost);
+  return sale.unitCost === null ? 0 : mulCost(sale.quantity, sale.unitCost);
 }
 
 export function computePnl(
@@ -91,6 +112,7 @@ export function computePnl(
   expenses: Expense[],
   range?: DateRange,
   manualSales: ManualSale[] = [],
+  writeOffs: StockWriteOff[] = [],
 ): PnlReport {
   const inWindow = (ts: number) => (range ? inRange(ts, range) : true);
   const active = invoices.filter((i) => i.status !== 'cancelled' && inWindow(i.date));
@@ -103,7 +125,8 @@ export function computePnl(
   const cogs = addMoney(sumMoney(active.map((i) => i.cogs)), sumMoney(manual.map(manualSaleCogs)));
   const grossProfit = round2(sales - cogs);
   const exp = sumMoney(expenses.filter((e) => inWindow(e.date)).map((e) => e.amount));
-  const netProfit = round2(grossProfit - exp);
+  const writeOffValue = sumMoney(writeOffs.filter((w) => inWindow(w.date)).map((w) => w.value));
+  const netProfit = round2(grossProfit - exp - writeOffValue);
   return {
     grossSales,
     discounts,
@@ -122,6 +145,7 @@ export function computePnl(
     cancelledTotal: sumMoney(cancelled.map((i) => i.total)),
     manualCount: manual.length,
     manualSales: manualTotal,
+    writeOffs: writeOffValue,
   };
 }
 
@@ -130,10 +154,10 @@ export async function getDashboard(
   monthRange: DateRange,
   seriesDays = 7,
 ): Promise<DashboardData> {
-  const { invoices, purchases, expenses, payments, supplierPayments, products, manualSales } = await loadAll();
+  const { invoices, purchases, expenses, products, manualSales, writeOffs, customers, suppliers } = await loadAll();
 
-  const pnl = computePnl(invoices, expenses, range, manualSales);
-  const monthPnl = computePnl(invoices, expenses, monthRange, manualSales);
+  const pnl = computePnl(invoices, expenses, range, manualSales, writeOffs);
+  const monthPnl = computePnl(invoices, expenses, monthRange, manualSales, writeOffs);
 
   const todayStart = startOfDay(Date.now());
   const todaySales = addMoney(
@@ -157,15 +181,29 @@ export async function getDashboard(
     activeProducts.reduce((acc, p) => acc + p.quantity * p.salePrice, 0),
   );
 
-  // ديون العملاء = المتبقي في الفواتير النشطة
-  const customerDebts = sumMoney(
-    invoices.filter((i) => i.status !== 'cancelled').map((i) => i.remaining),
+  // ديون العملاء = الرصيد السابق + متبقي الفواتير + متبقي السجلات الآجلة
+  const customerDebts = addMoney(
+    sumMoney(customers.map((c) => c.openingBalance ?? 0)),
+    sumMoney(invoices.filter((i) => i.status !== 'cancelled').map((i) => i.remaining)),
+    sumMoney(manualSales.map((m) => Math.max(0, round2(m.total - m.paid)))),
   );
 
-  // مستحقات الموردين = المتبقي في المشتريات المستلمة
-  const supplierDues = sumMoney(
-    purchases.filter((p) => p.status === 'received').map((p) => p.remaining),
+  // مستحقات الموردين = الرصيد السابق + المتبقي في المشتريات المستلمة
+  const supplierDues = addMoney(
+    sumMoney(suppliers.map((s) => s.openingBalance ?? 0)),
+    sumMoney(purchases.filter((p) => p.status === 'received').map((p) => p.remaining)),
   );
+
+  // تنبيهات الصلاحية (افتراضيًا 30 يومًا)
+  const today = startOfDay(Date.now());
+  const expiryAlerts = activeProducts
+    .filter((p) => p.expiryDate && p.quantity > 0)
+    .map((p) => {
+      const daysLeft = Math.round((startOfDay(p.expiryDate!) - today) / 86_400_000);
+      return { product: p, status: (daysLeft < 0 ? 'expired' : 'expiring') as 'expired' | 'expiring', daysLeft };
+    })
+    .filter((r) => r.daysLeft <= 30)
+    .sort((a, b) => a.daysLeft - b.daysLeft);
 
   const lowStock = activeProducts
     .filter((p) => p.quantity <= p.alertThreshold)
@@ -224,9 +262,6 @@ export async function getDashboard(
     });
   }
 
-  // تجاهل ما لم نعد بحاجته هنا (تُستخدم في صفحات التقارير)
-  void payments;
-  void supplierPayments;
 
   return {
     pnl,
@@ -237,6 +272,8 @@ export async function getDashboard(
     inventoryRetailValue,
     customerDebts,
     supplierDues,
+    writeOffs: pnl.writeOffs,
+    expiryAlerts,
     lowStock,
     recentInvoices,
     topProducts,
@@ -309,6 +346,7 @@ export interface ProfitRow {
   sales: number;
   cogs: number;
   expenses: number;
+  writeOffs: number;
   profit: number;
 }
 
@@ -317,13 +355,14 @@ export function buildProfitReport(
   expenses: Expense[],
   range: DateRange,
   manualSales: ManualSale[] = [],
+  writeOffs: StockWriteOff[] = [],
 ): ProfitRow[] {
   const days = new Map<number, ProfitRow>();
   const ensure = (ts: number): ProfitRow => {
     const key = startOfDay(ts);
     let row = days.get(key);
     if (!row) {
-      row = { date: key, sales: 0, cogs: 0, expenses: 0, profit: 0 };
+      row = { date: key, sales: 0, cogs: 0, expenses: 0, writeOffs: 0, profit: 0 };
       days.set(key, row);
     }
     return row;
@@ -345,9 +384,14 @@ export function buildProfitReport(
     const row = ensure(e.date);
     row.expenses = round2(row.expenses + e.amount);
   }
+  for (const w of writeOffs) {
+    if (!inRange(w.date, range)) continue;
+    const row = ensure(w.date);
+    row.writeOffs = round2(row.writeOffs + w.value);
+  }
   return [...days.values()]
     .sort((a, b) => b.date - a.date)
-    .map((r) => ({ ...r, profit: round2(r.sales - r.cogs - r.expenses) }));
+    .map((r) => ({ ...r, profit: round2(r.sales - r.cogs - r.expenses - r.writeOffs) }));
 }
 
 export interface InventoryRow {
@@ -405,7 +449,7 @@ export function buildTopProducts(
       const share = inv.subtotal > 0 ? item.lineTotal / inv.subtotal : 0;
       const net = subMoney(item.lineTotal, inv.discount * share);
       row.revenue = addMoney(row.revenue, net);
-      row.cost = addMoney(row.cost, mulMoney(item.quantity, item.unitCost));
+      row.cost = addMoney(row.cost, mulCost(item.quantity, item.unitCost));
       map.set(item.productId, row);
     }
   }

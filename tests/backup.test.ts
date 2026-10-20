@@ -51,7 +51,7 @@ describe('النسخ الاحتياطي والاستعادة', () => {
 
     const backup = await exportBackup();
     expect(backup.app).toBe('masroofi-store-manager');
-    expect(backup.version).toBe(2);
+    expect(backup.version).toBe(3);
     expect(backup.data.products).toHaveLength(1);
     expect(backup.data.manualSales).toHaveLength(1);
     expect(backup.data.invoiceImages).toHaveLength(1);

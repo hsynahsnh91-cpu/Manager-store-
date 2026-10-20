@@ -15,6 +15,18 @@ export function round2(amount: number): number {
   return (sign * Math.round(x + slack)) / 100;
 }
 
+/**
+ * تقريب تكلفة الوحدة إلى 4 منازل.
+ * الأسعار بالغرام أو المليلتر قد تكون أقل من 0.01، وتقريبها لمنزلتين يُفسد COGS.
+ */
+export function round4(amount: number): number {
+  if (!Number.isFinite(amount)) return 0;
+  const sign = amount < 0 ? -1 : 1;
+  const x = Math.abs(amount) * 10000;
+  const slack = Math.max(x * 4 * Number.EPSILON, 1e-12);
+  return (sign * Math.round(x + slack)) / 10000;
+}
+
 /** تحويل مبلغ إلى سنتات (عدد صحيح) مع تقريب صحيح */
 export function toCents(amount: number): number {
   if (!Number.isFinite(amount)) return 0;
@@ -49,6 +61,15 @@ export function mulMoney(quantity: number, price: number): number {
   return fromCents(Math.round(quantity * toCents(price)));
 }
 
+/**
+ * ضرب كمية × تكلفة وحدة بدقة 4 منازل (تكلفة الغرام مثلًا).
+ * لا يمرّر تكلفة الوحدة عبر تقريب السنتات كي لا تتراكم أخطاء في قيمة المخزون.
+ */
+export function mulCost(quantity: number, unitCost: number): number {
+  if (!Number.isFinite(quantity) || !Number.isFinite(unitCost)) return 0;
+  return round2(quantity * unitCost);
+}
+
 /** جمع قائمة مبالغ */
 export function sumMoney(amounts: number[]): number {
   let sum = 0;
@@ -67,6 +88,17 @@ export function clampMoney(amount: number): number {
 export function percentOf(amount: number, percent: number): number {
   if (!Number.isFinite(amount) || !Number.isFinite(percent)) return 0;
   return fromCents(Math.round(toCents(amount) * (percent / 100)));
+}
+
+/** تنسيق سعر وحدة: 4 منازل عند الحاجة (تكلفة الغرام) وإلا منزلتان */
+export function formatUnitPrice(amount: number, currency = ''): string {
+  const value = round4(amount);
+  const digits = value !== 0 && Math.abs(value) < 1 ? 4 : 2;
+  const formatted = value.toLocaleString('en-US', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+  return currency ? `${formatted} ${currency}` : formatted;
 }
 
 /** تنسيق مبلغ للعرض */

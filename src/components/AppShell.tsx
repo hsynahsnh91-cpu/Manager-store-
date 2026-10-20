@@ -58,6 +58,11 @@ const MOBILE_NAV = NAV.slice(0, 4);
 export function AppShell() {
   const { t } = useI18n();
   const { settings, updateSettings } = useApp();
+  // اسم دفتر الدين قابل للتخصيص من الإعدادات
+  const labelFor = (item: NavItem) =>
+    item.to === '/customers' && settings.debtLedgerTitle?.trim()
+      ? settings.debtLedgerTitle
+      : t(item.labelKey);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const location = useLocation();
 
@@ -93,7 +98,7 @@ export function AppShell() {
         {NAV.map((item) => (
           <NavLink key={item.to} to={item.to} end={item.to === '/'} className={navLinkClass} onClick={() => setDrawerOpen(false)}>
             <item.icon size={17} className="shrink-0" />
-            <span className="truncate">{t(item.labelKey)}</span>
+            <span className="truncate">{labelFor(item)}</span>
           </NavLink>
         ))}
       </nav>
