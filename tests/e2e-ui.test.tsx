@@ -208,6 +208,14 @@ describe('تدفق العمل الكامل عبر الواجهة', () => {
     const buyerInput = document.querySelector<HTMLInputElement>('input[aria-label="المشتري"]');
     await act(async () => setInputValue(buyerInput!, 'أبو محمد'));
 
+    // الخصم من المخزون لا يحدث تلقائيًا — لا بد من اختيار المستخدم
+    const stockCheckbox = document.querySelector<HTMLInputElement>('input[aria-label="خصم الكمية من المخزون"]');
+    expect(stockCheckbox).toBeTruthy();
+    expect(stockCheckbox!.checked).toBe(false);
+    await act(async () => {
+      stockCheckbox!.click();
+    });
+
     // حفظ السجل
     const modal = document.querySelector('[role="dialog"]');
     const saveBtn = Array.from(modal?.querySelectorAll('button') ?? []).find((b) => b.textContent?.trim() === 'حفظ');

@@ -223,7 +223,8 @@ export function SalesLogPage() {
         category: f.category || match.category,
         unitPrice: f.unitPrice && Number(f.unitPrice) > 0 ? f.unitPrice : String(match.salePrice),
         unitCost: f.unitCost ? f.unitCost : String(match.purchasePrice),
-        stockApplied: match.quantity > 0 ? true : f.stockApplied,
+        // لا خصم تلقائي: الخصم قرار صريح من المستخدم عبر مربع الاختيار
+        stockApplied: f.stockApplied,
       }));
     } else {
       setForm((f) => ({ ...f, productName: value, productId: '' }));

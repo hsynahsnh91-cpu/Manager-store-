@@ -27,8 +27,8 @@ export function GlobalSearch() {
     return () => document.removeEventListener('mousedown', onDoc);
   }, []);
 
-  const load = () => {
-    if (products.length > 0) return;
+  const load = (force = false) => {
+    if (!force && products.length > 0) return;
     void listProducts().then((rows) => setProducts(rows.filter((p) => !p.archived)));
   };
 
@@ -58,7 +58,7 @@ export function GlobalSearch() {
             load();
           }}
           onFocus={() => {
-            load();
+            load(true); // أعِد القراءة حتى تظهر المنتجات المضافة حديثًا
             if (q) setOpen(true);
           }}
           onKeyDown={(e) => {
