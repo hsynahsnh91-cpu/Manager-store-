@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Eye, Pencil, Plus, Search, User, Wallet } from 'lucide-react';
+import { AlertTriangle, Eye, Pencil, Plus, Search, User, Wallet } from 'lucide-react';
 import type { Customer } from '../../types';
 import {
   createCustomer,
@@ -214,6 +214,12 @@ export function CustomersPage() {
                     <td>
                       <div className="font-bold text-slate-800 dark:text-slate-100">{c.name}</div>
                       {c.address && <div className="text-[11px] text-slate-400">{c.address}</div>}
+                      {c.overdue && (
+                        <span className="mt-0.5 inline-flex items-center gap-1 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-600 dark:bg-rose-950 dark:text-rose-400">
+                          <AlertTriangle size={9} />
+                          {t('overdue')} · {c.oldestUnpaidDays} {t('days')}
+                        </span>
+                      )}
                     </td>
                     <td className="text-xs" dir="ltr">
                       {c.phone || '—'}

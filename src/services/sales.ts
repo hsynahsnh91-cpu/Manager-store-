@@ -137,6 +137,7 @@ export async function createSale(
       paymentMethod: input.paymentMethod,
       status,
       cogs,
+      initialPaid: paid,
       clientToken: input.clientToken,
       cancelReason: '',
       cancelledAt: null,

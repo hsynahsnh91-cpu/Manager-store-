@@ -70,6 +70,7 @@ export interface Invoice {
   paymentMethod: PaymentMethod | 'credit';
   status: InvoiceStatus;
   cogs: number; // تكلفة البضاعة المباعة وقت البيع
+  initialPaid: number; // المدفوع وقت إنشاء الفاتورة (الباقي من الدفعات لاحقًا)
   clientToken: string; // مفتاح ضد البيع المكرر
   cancelReason: string;
   cancelledAt: number | null;

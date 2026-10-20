@@ -135,6 +135,8 @@ export function POSPage() {
     () => computeCartTotals(cart.map((l) => ({ productId: l.productId, quantity: l.quantity, unitPrice: l.unitPrice })), Number(discount) || 0, paid),
     [cart, discount, paid],
   );
+  // المبلغ الزائد المدفوع (باقي للعميل) — من المدفوع الخام لا المقيد
+  const changeDue = Math.max(0, round2(paid - totals.total));
 
   const creditInvalid = computed.remaining > 0 && !customerId;
   const canSubmit =
@@ -392,7 +394,7 @@ export function POSPage() {
                 value={
                   paymentMethod === 'credit'
                     ? formatMoney(computed.remaining, settings.currency)
-                    : formatMoney(Math.max(0, round2(computed.paid - totals.total)), settings.currency)
+                    : formatMoney(changeDue, settings.currency)
                 }
                 strong
               />

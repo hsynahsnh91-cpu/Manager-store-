@@ -155,6 +155,7 @@ export const ar = {
   paymentsHistory: 'سجل المدفوعات',
   totalDebts: 'إجمالي الديون',
   overdue: 'متأخر',
+  days: 'يوم',
   searchCustomers: 'بحث بالاسم أو الهاتف…',
   dueInvoices: 'فواتير غير مسددة',
   balanceMustMatch: 'الرصيد = مجموع المتبقي في الفواتير غير المسددة',

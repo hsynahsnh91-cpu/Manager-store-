@@ -1,0 +1,175 @@
+// @vitest-environment jsdom
+/**
+ * اختبار تكاملي عبر الواجهة الحقيقية:
+ * إضافة منتج من نموذج الصفحة ← بيعه من نقطة البيع ← التحقق من خصم المخزون
+ * وظهور الفاتورة في صفحة الفواتير.
+ */
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createElement, act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { resetDBConnection, getDB } from '../src/services/db';
+import { listProducts } from '../src/services/products';
+import { listInvoices } from '../src/services/sales';
+
+(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+let root: Root | null = null;
+
+async function mount(): Promise<void> {
+  const { default: App } = await import('../src/App');
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  root = createRoot(container);
+  await act(async () => {
+    root!.render(createElement(App));
+  });
+}
+
+async function go(hash: string): Promise<void> {
+  window.location.hash = hash;
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 60));
+  });
+}
+
+async function flush(ms = 80): Promise<void> {
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, ms));
+  });
+}
+
+function byText<T extends Element>(selector: string, text: string): T | null {
+  const nodes = Array.from(document.querySelectorAll<T>(selector));
+  return nodes.find((n) => n.textContent?.includes(text)) ?? null;
+}
+
+async function click(el: Element | null): Promise<void> {
+  expect(el).toBeTruthy();
+  await act(async () => {
+    (el as HTMLElement).click();
+  });
+  await flush();
+}
+
+function setInputValue(input: HTMLInputElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+  setter?.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+beforeEach(async () => {
+  resetDBConnection();
+  const db = await getDB();
+  for (const store of [
+    'products',
+    'customers',
+    'suppliers',
+    'invoices',
+    'purchases',
+    'expenses',
+    'cash',
+    'customerPayments',
+    'supplierPayments',
+    'settings',
+    'meta',
+  ] as const) {
+    await db.clear(store);
+  }
+  document.body.innerHTML = '';
+  window.location.hash = '#/';
+});
+
+afterEach(async () => {
+  if (root) {
+    await act(async () => root!.unmount());
+    root = null;
+  }
+});
+
+describe('تدفق العمل الكامل عبر الواجهة', () => {
+  it('إضافة منتج ثم بيعه من نقطة البيع وخصم المخزون', async () => {
+    await mount();
+    await flush(120);
+
+    // — 1) إضافة منتج من صفحة المنتجات —
+    await go('#/products');
+    const addBtn = byText('button', 'منتج جديد');
+    await click(addBtn);
+
+    const inputs = Array.from(document.querySelectorAll<HTMLInputElement>('input'));
+    const nameInput = inputs.find((i) => i.closest('label')?.textContent?.includes('اسم المنتج'));
+    expect(nameInput).toBeTruthy();
+    await act(async () => {
+      setInputValue(nameInput!, 'حليب طازج');
+    });
+
+    const codeInput = inputs.find((i) => i.closest('label')?.textContent?.includes('رمز المنتج'));
+    await act(async () => {
+      setInputValue(codeInput!, 'MILK01');
+    });
+
+    const priceInputs = Array.from(document.querySelectorAll<HTMLInputElement>('input[type="number"]'));
+    // سعر الشراء، سعر البيع، الكمية، حد التنبيه (بالترتيب في النموذج)
+    expect(priceInputs.length).toBeGreaterThanOrEqual(4);
+    await act(async () => {
+      setInputValue(priceInputs[0], '10'); // الشراء
+      setInputValue(priceInputs[1], '15'); // البيع
+      setInputValue(priceInputs[2], '20'); // الكمية
+    });
+
+    const saveBtn = byText<HTMLButtonElement>('button', 'حفظ');
+    await click(saveBtn);
+    await flush(150);
+
+    const products = await listProducts();
+    expect(products).toHaveLength(1);
+    expect(products[0].name).toBe('حليب طازج');
+    expect(products[0].quantity).toBe(20);
+
+    // — 2) البيع من نقطة البيع —
+    await go('#/pos');
+    await flush(150);
+
+    const productBtn = byText<HTMLButtonElement>('button', 'حليب طازج');
+    expect(productBtn).toBeTruthy();
+    await click(productBtn);
+
+    const completeBtn = byText<HTMLButtonElement>('button', 'تأكيد البيع');
+    expect(completeBtn).toBeTruthy();
+    expect(completeBtn!.disabled).toBe(false);
+    await click(completeBtn);
+    await flush(250);
+
+    // — 3) التحقق: مخزون مخصوم + فاتورة محفوظة —
+    const after = await listProducts();
+    expect(after[0].quantity).toBe(19);
+
+    const invoices = await listInvoices();
+    expect(invoices).toHaveLength(1);
+    expect(invoices[0].total).toBe(15);
+    expect(invoices[0].status).toBe('paid');
+    expect(invoices[0].cogs).toBe(10);
+
+    // — 4) الفاتورة تظهر في صفحة الفواتير —
+    await go('#/invoices');
+    await flush(150);
+    expect(byText('td', 'INV-00001')).toBeTruthy();
+  }, 30000);
+
+  it('تبديل اللغة يغيّر اتجاه الصفحة', async () => {
+    await mount();
+    await flush(120);
+
+    expect(document.documentElement.dir).toBe('rtl');
+    const langBtn = Array.from(document.querySelectorAll('header button')).find((b) =>
+      b.textContent?.includes('EN'),
+    );
+    await click(langBtn ?? null);
+    await flush(150);
+
+    expect(document.documentElement.dir).toBe('ltr');
+    expect(document.documentElement.lang).toBe('en');
+    // عنوان قائمة الفارغة أو أي نص بالإنجليزية
+    expect(document.body.textContent?.includes('Dashboard') || document.body.textContent?.length).toBeTruthy();
+  }, 20000);
+});

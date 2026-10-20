@@ -45,6 +45,10 @@ export interface CustomerRow extends Customer {
   balance: number;
   invoiceCount: number;
   totalPurchases: number;
+  /** أيام أقدم فاتورة غير مسددة — لتنبيه المتأخرات */
+  oldestUnpaidDays: number;
+  /** تجاوز أيام السماح المتفق عليها مع العميل */
+  overdue: boolean;
 }
 
 export async function listCustomersWithBalance(): Promise<CustomerRow[]> {
@@ -53,14 +57,21 @@ export async function listCustomersWithBalance(): Promise<CustomerRow[]> {
     getAll<Invoice>('invoices'),
   ]);
   const active = invoices.filter((i) => i.status !== 'cancelled');
+  const now = Date.now();
+  const dayMs = 24 * 3600 * 1000;
   return customers
     .map((c) => {
       const mine = active.filter((i) => i.customerId === c.id);
+      const unpaid = mine.filter((i) => i.remaining > 0);
+      const oldest = unpaid.length > 0 ? Math.min(...unpaid.map((i) => i.date)) : null;
+      const oldestUnpaidDays = oldest ? Math.floor((now - oldest) / dayMs) : 0;
       return {
         ...c,
         balance: sumMoney(mine.map((i) => i.remaining)),
         invoiceCount: mine.length,
         totalPurchases: sumMoney(mine.map((i) => i.total)),
+        oldestUnpaidDays,
+        overdue: oldest !== null && c.creditDays > 0 && oldestUnpaidDays > c.creditDays,
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -86,6 +97,7 @@ export async function getCustomerStatement(customerId: string): Promise<Customer
   ]);
   const events: { date: number; kind: 'invoice' | 'payment'; debit: number; credit: number; label: string; reference: string; refId: string; sort: number }[] = [];
   for (const inv of invoices as Invoice[]) {
+    if (inv.status === 'cancelled') continue; // الفاتورة الملغاة خارج كشف الحساب (سجلها يبقى في الفواتير)
     events.push({
       date: inv.date,
       kind: 'invoice',
@@ -96,9 +108,27 @@ export async function getCustomerStatement(customerId: string): Promise<Customer
       refId: inv.id,
       sort: 1,
     });
-    // مرتجع/إلغاء يُخصم من الرصيد عبر دمجه كعدم وجود الفاتورة — نعامله لاحقًا بالفلترة
+    const initialPaid = inv.initialPaid ?? 0;
+    if (initialPaid > 0) {
+      events.push({
+        date: inv.date,
+        kind: 'payment',
+        debit: 0,
+        credit: initialPaid,
+        label: 'مدفوع وقت البيع',
+        reference: inv.number,
+        refId: `${inv.id}_init`,
+        sort: 1,
+      });
+    }
   }
+  const activeIds = new Set(
+    (invoices as Invoice[]).filter((i) => i.status !== 'cancelled').map((i) => i.id),
+  );
   for (const p of payments as CustomerPayment[]) {
+    // دفعة سُدِّدت بالكامل لفاتورة ملغاة مُسترد مبلغها — نستثنيها من الكشف
+    const touchesActive = p.invoiceIds.length === 0 || p.invoiceIds.some((id) => activeIds.has(id));
+    if (!touchesActive) continue;
     events.push({
       date: p.date,
       kind: 'payment',

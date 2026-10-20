@@ -151,6 +151,7 @@ export const en: Record<TranslationKey, string> = {
   paymentsHistory: 'Payment history',
   totalDebts: 'Total debts',
   overdue: 'Overdue',
+  days: 'days',
   searchCustomers: 'Search by name or phone…',
   dueInvoices: 'Unpaid invoices',
   balanceMustMatch: 'Balance = sum of remaining on unpaid invoices',
