@@ -17,6 +17,7 @@ import type {
   ScannedInvoiceItem,
 } from '../types';
 import { getDB } from './db';
+import { startOfDay } from '../utils/dates';
 import { uid } from '../utils/id';
 import { addMoney, mulMoney, round2, subMoney } from '../utils/money';
 import { normalizeArabic, normalizeDigits } from '../utils/text';
@@ -274,7 +275,22 @@ export async function confirmScannedInvoice(input: ConfirmScannedInvoiceInput): 
           });
         } else {
           const newPrice = round2(item.unitPrice);
-          if (newPrice > 0 && newPrice !== product.purchasePrice) {
+          // حماية من الفواتير القديمة: لا نخفض/نرفع سعرًا من فاتورة تاريخها
+          // أقدم من آخر تحديث مسجّل للمنتج — القيمة الأحدث هي الصحيح.
+          const invoiceDay = startOfDay(input.invoiceDate);
+          const lastUpdateDay = product.purchasePriceUpdatedAt
+            ? startOfDay(product.purchasePriceUpdatedAt)
+            : 0;
+          if (lastUpdateDay > 0 && invoiceDay < lastUpdateDay) {
+            priceUpdates.push({
+              productId: product.id,
+              productName: product.name,
+              oldPrice: product.purchasePrice,
+              newPrice: product.purchasePrice,
+              action: 'skipped',
+              reason: 'stale',
+            });
+          } else if (newPrice > 0 && newPrice !== product.purchasePrice) {
             const updated: Product = {
               ...product,
               purchasePrice: newPrice,

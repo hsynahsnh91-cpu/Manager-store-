@@ -321,6 +321,61 @@ describe('اعتماد الفاتورة وتحديث الأسعار', () => {
     expect(invoice.priceUpdates).toHaveLength(1);
   });
 
+  it('لا يطبّق سعرًا من فاتورة أقدم من آخر تحديث (حماية من الفواتير القديمة)', async () => {
+    const { milk } = await seed();
+    // فاتورة حديثة ترفع سعر الشراء إلى 6
+    await confirmScannedInvoice(
+      baseInvoice({
+        invoiceNumber: 'N-100',
+        invoiceDate: at(2026, 10, 20),
+        items: [item({ name: milk.name, productId: milk.id, matchState: 'matched', quantity: 5, unitPrice: 6, lineTotal: 30 })],
+        subtotal: 30, discount: 0, tax: 0, total: 30,
+      }),
+    );
+    expect((await listProducts()).find((p) => p.id === milk.id)!.purchasePrice).toBe(6);
+
+    // فاتورة قديمة (18 أكتوبر) بسعر أقل — لا يجوز أن تخفض السعر بصمت
+    const old = await confirmScannedInvoice(
+      baseInvoice({
+        invoiceNumber: 'N-101',
+        invoiceDate: at(2026, 10, 18),
+        items: [item({ name: milk.name, productId: milk.id, matchState: 'matched', quantity: 5, unitPrice: 3, lineTotal: 15 })],
+        subtotal: 15, discount: 0, tax: 0, total: 15,
+      }),
+    );
+
+    const after = (await listProducts()).find((p) => p.id === milk.id)!;
+    expect(after.purchasePrice).toBe(6);
+    expect(after.salePrice).toBe(6.5);
+    const decision = old.priceUpdates.find((p) => p.productId === milk.id)!;
+    expect(decision).toMatchObject({ action: 'skipped', reason: 'stale' });
+    // سجل الأسعار يحوي تغييرًا واحدًا فقط (الفاتورة الحديثة)
+    expect(await getPriceHistory(milk.id)).toHaveLength(1);
+  });
+
+  it('يسمح بتحديث السعر من فاتورة بنفس يوم آخر تحديث', async () => {
+    const { milk } = await seed();
+    const today = Date.now();
+    await confirmScannedInvoice(
+      baseInvoice({
+        invoiceNumber: 'N-200',
+        invoiceDate: today,
+        items: [item({ name: milk.name, productId: milk.id, matchState: 'matched', quantity: 5, unitPrice: 6, lineTotal: 30 })],
+        subtotal: 30, discount: 0, tax: 0, total: 30,
+      }),
+    );
+    const second = await confirmScannedInvoice(
+      baseInvoice({
+        invoiceNumber: 'N-201',
+        invoiceDate: today,
+        items: [item({ name: milk.name, productId: milk.id, matchState: 'matched', quantity: 5, unitPrice: 7, lineTotal: 35 })],
+        subtotal: 35, discount: 0, tax: 0, total: 35,
+      }),
+    );
+    expect((await listProducts()).find((p) => p.id === milk.id)!.purchasePrice).toBe(7);
+    expect(second.priceUpdates.find((p) => p.productId === milk.id)?.action).toBe('updated');
+  });
+
   it('يمنع حفظ الفاتورة نفسها مرتين ويكشف التكرار قبل الحفظ', async () => {
     const { milk } = await seed();
     const input = baseInvoice({

@@ -29,7 +29,7 @@ import { Input, Select } from '../../components/Form';
 import { Badge, StatCard } from '../../components/UI';
 import { Modal } from '../../components/Modal';
 import { formatMoney, round2 } from '../../utils/money';
-import { formatDate, fromDateInput, toDateInput } from '../../utils/dates';
+import { formatDate, fromDateInput, startOfDay, toDateInput } from '../../utils/dates';
 import { uid } from '../../utils/id';
 import { listProducts } from '../../services/products';
 import { listCategories, suggestCategory } from '../../services/categories';
@@ -179,6 +179,21 @@ export function ScanInvoicePage() {
       .filter((c): c is NonNullable<typeof c> => c !== null);
     return summarizePriceChanges(changes);
   }, [activeItems, products]);
+
+  const staleCount = useMemo(() => {
+    const invoiceDay = startOfDay(fromDateInput(header.invoiceDate));
+    return activeItems.filter((r) => {
+      if (!r.productId) return false;
+      const product = products.find((p) => p.id === r.productId);
+      if (!product?.purchasePriceUpdatedAt) return false;
+      return invoiceDay < startOfDay(product.purchasePriceUpdatedAt);
+    }).length;
+  }, [activeItems, products, header.invoiceDate]);
+
+  const staleSkippedCount = useMemo(
+    () => (doneInvoice?.priceUpdates ?? []).filter((p) => p.action === 'skipped' && p.reason === 'stale').length,
+    [doneInvoice],
+  );
 
   const newProductsCount = useMemo(
     () => activeItems.filter((r) => !r.productId && r.createNew).length,
@@ -1044,6 +1059,12 @@ export function ScanInvoicePage() {
                   <span className="font-bold">{newProductsCount}</span>
                 </p>
               </div>
+              {applyPurchasePrices && staleCount > 0 && (
+                <p className="flex items-start gap-1 rounded-lg border border-amber-200 bg-amber-50 p-2 text-[10px] leading-relaxed text-amber-700 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-300">
+                  <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                  <span>{t('stalePriceWarning')} ({staleCount})</span>
+                </p>
+              )}
               <label className="flex items-start gap-2 rounded-lg bg-slate-50 p-2 text-[11px] dark:bg-slate-800/60">
                 <input
                   type="checkbox"
@@ -1088,6 +1109,11 @@ export function ScanInvoicePage() {
             <StatCard title={t('pricesUpdated')} value={String(doneInvoice.priceUpdates.filter((p) => p.action === 'updated').length)} icon={<ArrowUpRight size={16} />} accent="amber" />
             <StatCard title={t('newProductsLabel')} value={String(doneInvoice.items.filter((i) => i.matchState === 'new').length)} icon={<Sparkles size={16} />} accent="violet" />
           </div>
+          {staleSkippedCount > 0 && (
+            <p className="mx-auto mt-3 max-w-xl rounded-lg border border-amber-200 bg-amber-50 p-3 text-[11px] leading-relaxed text-amber-700 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-300">
+              {t('stalePriceSkipped')} ({staleSkippedCount})
+            </p>
+          )}
           <div className="mt-5 flex flex-wrap justify-center gap-2">
             <Link to="/invoice-library"><Button icon={<FileText size={16} />}>{t('openLibrary')}</Button></Link>
             <Button variant="secondary" icon={<Camera size={16} />} onClick={resetAll}>{t('scanAnother')}</Button>

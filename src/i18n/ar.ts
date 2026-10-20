@@ -423,6 +423,8 @@ export const ar = {
   itemsCount: 'عدد الأصناف',
   pricesUpdated: 'أسعار محدّثة',
   newProductsLabel: 'منتجات جديدة',
+  stalePriceWarning: 'أسعار أصناف في هذه الفاتورة أقدم من آخر تحديث للمنتج، لذلك لن تُطبَّق تلقائيًا — راجعها من صفحة الأسعار إن كانت صحيحة.',
+  stalePriceSkipped: 'أسعار لم تُطبَّق (أقدم من آخر تحديث)',
   priceSummary: 'ملخص تأثير الأسعار',
   pricesWillIncrease: 'سترفع سعر الشراء',
   pricesWillDecrease: 'ستخفض سعر الشراء',

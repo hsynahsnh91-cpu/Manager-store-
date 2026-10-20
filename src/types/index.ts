@@ -295,6 +295,8 @@ export interface ScannedInvoice {
     oldPrice: number;
     newPrice: number;
     action: 'updated' | 'unchanged' | 'skipped';
+    /** سبب التخطي — قديم: تاريخ الفاتورة أقدم من آخر تحديث للسعر */
+    reason?: 'stale';
   }[];
   pricesApplied: boolean;
   duplicateOf: ID | null;

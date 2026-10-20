@@ -411,6 +411,8 @@ export const en: Record<TranslationKey, string> = {
   itemsCount: 'Items',
   pricesUpdated: 'Prices updated',
   newProductsLabel: 'New products',
+  stalePriceWarning: 'Some prices on this invoice are older than the product\'s last update, so they will not be applied — review them on the Prices page if they are correct.',
+  stalePriceSkipped: 'Prices not applied (older than last update)',
   priceSummary: 'Price impact summary',
   pricesWillIncrease: 'Purchase price increases',
   pricesWillDecrease: 'Purchase price decreases',
